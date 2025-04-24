@@ -10,6 +10,7 @@ import inspect
 
 n_embd = 768
 block_size = 1024
+absolute_paths = True
 
 class ClassificationSST2(nn.Module):
   def __init__(self, device):
@@ -17,10 +18,14 @@ class ClassificationSST2(nn.Module):
     self.pretrained_model = None
     self.device = device
     self.n_layer = 12 
+    self.storage_prefix = "./"
+    if absolute_paths:
+        self.storage_prefix = "/users/PAS2836/benwalls2004/ipa_finetuning"
+
 
     self.tokenizer = GPT2TokenizerFast(
-        vocab_file="./tokenizers/bpe-normal-number-preservation-vocab.json",
-        merges_file="./tokenizers/bpe-normal-number-preservation-merges.txt",
+        vocab_file=f"{self.storage_prefix}/tokenizers/bpe-normal-number-preservation-vocab.json",
+        merges_file=f"{self.storage_prefix}/tokenizers/bpe-normal-number-preservation-merges.txt",
         pad_token="<pad>",
         model_max_length=1024,
         padding_side="right",
@@ -29,31 +34,30 @@ class ClassificationSST2(nn.Module):
     )
 
     self.num_classes = 2
-    self.learning_rate = 5e-4
+    ## 1e-5, 2e-5, 3e-5 
+    self.learning_rate = 3e-5
     self.weight_decay = 0.01
     self.beta1 = 0.9
     self.beta2 = 0.999
     self.grad_clip = .1
-    self.min_lr = 6e-5
+    self.min_lr = .1 * self.learning_rate
     self.dropout = 0.1
-    self.batch_size = 32
-    self.warmup_iter_ratio = .05
-    self.lr_decay_iter_ratio = .90
+    # 16, 32
+    self.batch_size = 16
+    self.warmup_iter_ratio = .06
+    self.lr_decay_iter_ratio = .9
     self.warmup_iters = None
     self.lr_decay_iters = None
 
     self.layer_norm = nn.LayerNorm(n_embd)
 
     self.classifier = nn.Sequential(
-      nn.Linear(n_embd, 256),
-      nn.ReLU(),
       nn.Dropout(self.dropout),
-      nn.Linear(256, self.num_classes)
+      nn.Linear(n_embd, self.num_classes, bias=False)
     )
-        
+    
     with torch.no_grad():
-        self.classifier[0].weight.data.normal_(mean=0.0, std=0.02)
-        self.classifier[0].bias.data.zero_()
+        self.classifier[1].weight.data.normal_(mean=0.0, std=0.02)
 
     for pn, p in self.classifier.named_parameters():
       if pn.endswith('c_proj.weight'):
@@ -101,9 +105,9 @@ class ClassificationSST2(nn.Module):
 
   def get_batch(self, split):
     if split == 'train':
-        data = np.memmap('./data/sst2/train.bin', dtype=np.uint16, mode='r')
+        data = np.memmap(f"{self.storage_prefix}/data/sst2/train.bin", dtype=np.uint16, mode='r')
     else:
-        data = np.memmap('./data/sst2/val.bin', dtype=np.uint16, mode='r')
+        data = np.memmap(f"{self.storage_prefix}/data/sst2/val.bin", dtype=np.uint16, mode='r')
 
     num_examples = len(data) // (block_size + 1)
     sample_indecies = torch.randint(num_examples, (self.batch_size,))

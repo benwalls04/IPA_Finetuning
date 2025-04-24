@@ -19,6 +19,7 @@ datasets = {
 }
 
 # static parameters (DONT CHANGE)
+absolute_paths = True
 block_size = 1024
 n_layer = 12
 n_head = 12
@@ -26,10 +27,16 @@ n_embd = 768
 device = 'cuda' 
 dtype = 'float16' if torch.cuda.is_available() else 'float32' 
 backend = 'nccl' 
-out_dir = './checkpoints/openwebtext_normal_multi_node_12_5' 
+storage_prefix = "./"
+if absolute_paths:
+    storage_prefix = "/users/PAS2836/benwalls2004/ipa_finetuning"
+
+out_dir = f"{storage_prefix}/checkpoints"
+tokenizer_dir = f"{storage_prefix}/tokenizers"
+data_dir = f"{storage_prefix}/data"
 
 gradient_accumulation_steps = 4
-num_epochs = 2
+num_epochs = 10
 dropout = 0.0
 wandb_project = 'ipa_finetuning'
 log_interval = 5
@@ -42,6 +49,10 @@ wandb_log = True
 decay_lr = True
 force_cuda = True
 eval_only = False 
+
+# Update tokenizer path in ClassificationSST2
+vocab_file = f"{tokenizer_dir}/bpe-normal-number-preservation-vocab.json"
+merges_file = f"{tokenizer_dir}/bpe-normal-number-preservation-merges.txt"
 
 def configure_optimizers(device_type, model): 
     # First, separate parameters into pretrained model and classification head
@@ -91,11 +102,11 @@ def get_lr(model, it):
     # 2) if it > lr_decay_iters, return min learning rate
     if it > model.lr_decay_iters:
         return model.min_lr
-    # 3) in between, use cosine decay down to min learning rate
+    # 3) in between, use linear decay down to min learning rate
     decay_ratio = (it - model.warmup_iters) / (model.lr_decay_iters - model.warmup_iters)
     assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
-    return model.min_lr + coeff * (model.learning_rate - model.min_lr)
+    # Linear decay (instead of cosine)
+    return model.learning_rate - decay_ratio * (model.learning_rate - model.min_lr)
 
 # get the dataset from the command line
 parser = argparse.ArgumentParser(description='Finetune a model on a dataset')
@@ -111,13 +122,13 @@ dataset = load_dataset("glue", dataset_arg)
 model_class = datasets[dataset_arg]
 model = model_class(device)
 
-train_file_path = f"./data/{dataset_arg}/train.bin"
-val_file_path = f"./data/{dataset_arg}/val.bin"
-metadata_file_path = f"./data/{dataset_arg}/metadata.json"
+train_file_path = f"{data_dir}/{dataset_arg}/train.bin"
+val_file_path = f"{data_dir}/{dataset_arg}/val.bin"
+metadata_file_path = f"{data_dir}/{dataset_arg}/metadata.json"
 
 # preprocess the dataset
 if not os.path.exists(train_file_path):
-    os.makedirs(f"./data/{dataset_arg}", exist_ok=True)
+    os.makedirs(f"{data_dir}/{dataset_arg}", exist_ok=True)
 
     # tokenize the datatset 
     train_dataset = dataset["train"]
@@ -153,7 +164,7 @@ meta_block_size = meta['max_length']
 
 # load the pretrained model
 print(f"Resuming training from {out_dir}")
-ckpt_path = os.path.join(out_dir, 'ckpt.pt')
+ckpt_path = os.path.join(out_dir, 'openwebtext_normal_multi_node_12_5/ckpt.pt')
 checkpoint = torch.load(ckpt_path, map_location=device)
 checkpoint_model_args = checkpoint['model_args']
 
@@ -203,7 +214,11 @@ if wandb_log:
         "beta2": model.beta2,
         "grad_clip": model.grad_clip,
         "dropout": model.dropout,
-        "batch_size": model.batch_size
+        "warmup_iter_ratio": model.warmup_iter_ratio,
+        "lr_decay_iter_ratio": model.lr_decay_iter_ratio,
+        "min_lr": model.min_lr,
+        "num_epochs": num_epochs,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
     }
     wandb.init(project=wandb_project, name=f"{dataset_arg}-{time.time()}", config=config)
 
@@ -216,7 +231,7 @@ model.warmup_iters = int(model.warmup_iter_ratio * max_iters)
 model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
 
 best_val_loss = float('inf')
-best_checkpoint_path = f"./checkpoints/{dataset_arg}-ckpt.pt"
+best_checkpoint_path = f"{out_dir}/{dataset_arg}-ckpt.pt"
 
 # Check if a previous best checkpoint exists
 if os.path.exists(best_checkpoint_path):
