@@ -64,6 +64,7 @@ python finetune.py \
   --dataset "$dataset_name" \
   --pretrained_ckpt_path "$checkpoint_path" \
   --storage_prefix "$storage_prefix" \
+  --hf_cache "$datasets_prefix" \
   --wandb_project "$wandb_project" \
   --wandb_log
 
