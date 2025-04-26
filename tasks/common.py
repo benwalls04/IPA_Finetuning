@@ -133,6 +133,11 @@ class Task(nn.Module):
             with open(meta_file, "w+") as fp:
                 json.dump(meta, fp)
 
+    def get_token_count(self) -> int:
+        train_file = self.data_dir / self.name / 'train.bin'
+        data = np.memmap(train_file, dtype=np.uint16, mode='r')
+        return len(data)
+
     def get_metadata(self) -> dict:
         meta_file = self.data_dir / self.name / 'metadata.json'
         with open(meta_file, "r") as fp:

@@ -1,4 +1,5 @@
 import argparse
+import pathlib
 from datasets import load_dataset
 from tasks.classification_sst2 import ClassificationSST2
 import os
@@ -18,41 +19,57 @@ datasets = {
   "sst2": ClassificationSST2
 }
 
-# static parameters (DONT CHANGE)
-absolute_paths = True
-block_size = 1024
-n_layer = 12
-n_head = 12
-n_embd = 768
-device = 'cuda' 
-dtype = 'float16' if torch.cuda.is_available() else 'float32' 
-backend = 'nccl' 
-storage_prefix = "./"
-if absolute_paths:
-    storage_prefix = "/users/PAS2836/benwalls2004/ipa_finetuning"
+parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
 
-out_dir = f"{storage_prefix}/checkpoints"
-tokenizer_dir = f"{storage_prefix}/tokenizers"
-data_dir = f"{storage_prefix}/data"
+# Required
+parser.add_argument('--dataset', type=str, required=True)
+parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 
-gradient_accumulation_steps = 4
-num_epochs = 10
-dropout = 0.0
-wandb_project = 'ipa_finetuning'
-log_interval = 5
-eval_interval = 5
-eval_iters = 40
+# Paths
+parser.add_argument('--storage_prefix', type=pathlib.Path, default=pathlib.Path('.'))
+parser.add_argument('--out_dir', type=str, default='checkpoints')
+parser.add_argument('--tokenizer_dir', type=str, default='tokenizers')
+parser.add_argument('--data_dir', type=str, default='data')
+parser.add_argument('--tokenizer_name', type=str, default='bpe-normal-number-preservation')
+
+# Training settings
+parser.add_argument('--num_epochs', type=int, default=10)
+parser.add_argument('--eval_iters', type=int, default=40)
+parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
+parser.add_argument('--dropout', type=float, default=0.1)
+
+# Model architecture
+parser.add_argument('--n_layer', type=int, default=12)
+parser.add_argument('--n_head', type=int, default=12)
+parser.add_argument('--n_embd', type=int, default=768)
+parser.add_argument('--block_size', type=int, default=1024)
+
+# Device settings
+parser.add_argument('--device', type=str, default='cuda')
+parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
+parser.add_argument('--backend', type=str, default='nccl')
+
+# Logging
+parser.add_argument('--wandb_project', type=str, default='ipa_finetuning')
+parser.add_argument('--log_interval', type=int, default=5)
+parser.add_argument('--eval_interval', type=int, default=5)
+parser.add_argument('--wandb_log', action='store_true')
+parser.add_argument('--eval_only', action='store_true')
+
+args = parser.parse_args()
+
+out_dir = args.storage_prefix / args.out_dir
+tokenizer_dir = args.storage_prefix / args.tokenizer_dir
+data_dir = args.storage_prefix / args.data_dir
 
 always_save_checkpoint = False
 bias = False
-wandb_log = True
 decay_lr = True
 force_cuda = True
-eval_only = False 
 
 # Update tokenizer path in ClassificationSST2
-vocab_file = f"{tokenizer_dir}/bpe-normal-number-preservation-vocab.json"
-merges_file = f"{tokenizer_dir}/bpe-normal-number-preservation-merges.txt"
+vocab_file = tokenizer_dir / f"{args.tokenizer_name}-vocab.json"
+merges_file = tokenizer_dir / f"{args.tokenizer_name}-merges.txt"
 
 def configure_optimizers(device_type, model): 
     # First, separate parameters into pretrained model and classification head
@@ -108,11 +125,6 @@ def get_lr(model, it):
     # Linear decay (instead of cosine)
     return model.learning_rate - decay_ratio * (model.learning_rate - model.min_lr)
 
-# get the dataset from the command line
-parser = argparse.ArgumentParser(description='Finetune a model on a dataset')
-parser.add_argument('--dataset', type=str, required=True,
-                  help='Path to the dataset or dataset name')
-args = parser.parse_args()
 dataset_arg = args.dataset
 if dataset_arg not in datasets:
     raise ValueError(f"Dataset {dataset_arg} not found. Please choose from: {datasets}")
@@ -120,30 +132,11 @@ if dataset_arg not in datasets:
 # load the datatset and needed functions 
 dataset = load_dataset("glue", dataset_arg)
 model_class = datasets[dataset_arg]
-model = model_class(device)
+model = model_class(args.device)
 
-train_file_path = f"{data_dir}/{dataset_arg}/train.bin"
-val_file_path = f"{data_dir}/{dataset_arg}/val.bin"
-metadata_file_path = f"{data_dir}/{dataset_arg}/metadata.json"
-
-# preprocess the dataset
-if not os.path.exists(train_file_path):
-    os.makedirs(f"{data_dir}/{dataset_arg}", exist_ok=True)
-
-    # tokenize the datatset 
-    train_dataset = dataset["train"]
-    validation_dataset = dataset["validation"]
-    train_dataset = train_dataset.map(model.preprocess, batched=True)
-    validation_dataset = validation_dataset.map(model.preprocess, batched=True)
-
-    # prepare the data 
-    train_data, val_data, metadata = model.prepare_data(train_dataset, validation_dataset)
-
-    # save the data 
-    train_data.tofile(train_file_path)
-    val_data.tofile(val_file_path)
-    with open(metadata_file_path, "w") as f:
-        json.dump(metadata, f)
+train_dataset = dataset["train"]
+validation_dataset = dataset["validation"]
+model.prepare_if_needed(train_dataset, validation_dataset)
 
 # setup the GPUs
 if force_cuda and not torch.cuda.is_available():
@@ -152,24 +145,22 @@ os.makedirs(out_dir, exist_ok=True)
 torch.manual_seed(1337)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-device_type = 'cuda' if 'cuda' in device else 'cpu'
-ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+device_type = 'cuda' if 'cuda' in args.device else 'cpu'
+ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[args.dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-meta_vocab_size = None
-with open(metadata_file_path, 'r') as f:
-    meta = json.load(f)
+meta = model.get_meta()
 meta_vocab_size = meta['vocab_size']
 meta_block_size = meta['max_length']
 
 # load the pretrained model
 print(f"Resuming training from {out_dir}")
 ckpt_path = os.path.join(out_dir, 'openwebtext_normal_multi_node_12_5/ckpt.pt')
-checkpoint = torch.load(ckpt_path, map_location=device)
+checkpoint = torch.load(ckpt_path, map_location=args.device)
 checkpoint_model_args = checkpoint['model_args']
 
-model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=meta_block_size,
-                bias=bias, vocab_size=meta_vocab_size, dropout=dropout) 
+model_args = dict(n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, block_size=meta_block_size,
+                bias=bias, vocab_size=meta_vocab_size, dropout=args.dropout)
 for k in ['n_layer', 'n_head', 'n_embd', 'bias', 'block_size', 'vocab_size']:
     model_args[k] = checkpoint_model_args[k]
   
@@ -188,12 +179,12 @@ filtered_state_dict = {k: v for k, v in state_dict.items()
                       if k in model_dict and v.shape == model_dict[k].shape}
 model_dict.update(filtered_state_dict)
 pretrained_model.load_state_dict(model_dict)
-pretrained_model.to(device)
+pretrained_model.to(args.device)
 model.pretrained_model = pretrained_model
-model.to(device)  # Move the entire model to the device
+model.to(args.device)  # Move the entire model to the device
 
 # set up the optimizer (from pretrained if possible)
-scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))
 
 # Fix the parameter separation logic
 pretrained_params = set(model.pretrained_model.parameters())
@@ -206,7 +197,7 @@ for param in model.parameters():
 
 optimizer = configure_optimizers(device_type, model)
 
-if wandb_log:
+if args.wandb_log:
     config = {
         "learning_rate": model.learning_rate,
         "weight_decay": model.weight_decay,
@@ -217,16 +208,15 @@ if wandb_log:
         "warmup_iter_ratio": model.warmup_iter_ratio,
         "lr_decay_iter_ratio": model.lr_decay_iter_ratio,
         "min_lr": model.min_lr,
-        "num_epochs": num_epochs,
-        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "num_epochs": args.num_epochs,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
     }
-    wandb.init(project=wandb_project, name=f"{dataset_arg}-{time.time()}", config=config)
+    wandb.init(project=args.wandb_project, name=f"{dataset_arg}-{time.time()}", config=config)
 
 # calculate number of iterations required
-tokens_per_iter = gradient_accumulation_steps * model.batch_size * block_size
-data = np.memmap(train_file_path, dtype=np.uint16, mode='r')
-token_count = len(data)
-max_iters = int(np.ceil(token_count / tokens_per_iter)) * num_epochs
+tokens_per_iter = args.gradient_accumulation_steps * model.batch_size * args.block_size
+token_count = model.get_token_count()
+max_iters = int(np.ceil(token_count / tokens_per_iter)) * args.num_epochs
 model.warmup_iters = int(model.warmup_iter_ratio * max_iters)
 model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
 
@@ -236,7 +226,7 @@ best_checkpoint_path = f"{out_dir}/{dataset_arg}-ckpt.pt"
 # Check if a previous best checkpoint exists
 if os.path.exists(best_checkpoint_path):
     print(f"Loading previous best checkpoint from {best_checkpoint_path}")
-    best_checkpoint = torch.load(best_checkpoint_path, map_location=device)
+    best_checkpoint = torch.load(best_checkpoint_path, map_location=args.device)
     best_val_loss = best_checkpoint.get('val_loss', float('inf'))
     print(f"Previous best validation loss: {best_val_loss:.4f}")
 
@@ -254,13 +244,13 @@ while True:
         param_group['lr'] = lr
 
     # evaluate the loss on train/val sets and write checkpoints    
-    if iter_num == 0 and eval_only:
+    if iter_num == 0 and args.eval_only:
         break
 
-    for micro_step in range(gradient_accumulation_steps):
+    for micro_step in range(args.gradient_accumulation_steps):
         with ctx:
             logits, loss = model(X, Y)
-            loss = loss / gradient_accumulation_steps
+            loss = loss / args.gradient_accumulation_steps
         
         X, Y = get_batch('train')
         
@@ -275,8 +265,8 @@ while True:
     optimizer.zero_grad(set_to_none=True)
 
     # evaluate the loss on train/val sets and write checkpoints    
-    if iter_num % eval_interval == 0:
-        losses = model.estimate_loss(ctx, eval_iters)
+    if iter_num % args.eval_interval == 0:
+        losses = model.estimate_loss(ctx, args.eval_iters)
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val f2 {losses['val_f2']:.4f}, val accuracy {losses['val_accuracy']:.4f}")
         
         # Check if this is the best validation loss so far
@@ -296,7 +286,7 @@ while True:
             }
             torch.save(checkpoint, best_checkpoint_path)
         
-        if wandb_log:            
+        if args.wandb_log:
             wandb.log({
                 "iter": iter_num,
                 "train/loss": losses['train'],
