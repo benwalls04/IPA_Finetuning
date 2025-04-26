@@ -1,3 +1,4 @@
+import json
 import pathlib
 
 import numpy as np
@@ -9,13 +10,14 @@ from transformers import GPT2TokenizerFast
 
 
 class Task(nn.Module):
-    def __init__(self, device: str,
+    def __init__(self, name: str, device: str,
                  tokenizer_vocab: pathlib.Path, tokenizer_merges: pathlib.Path,
                  data_prefix: pathlib.Path,
                  embedding_size: int, dropout: float, n_classes: int,
                  context_window: int,
                  input_feat: str, output_feat: str):
         super().__init__()
+        self.name = name
         self.pretrained_model = None
         self.device = device
         self.tokenizer_vocab = tokenizer_vocab
@@ -79,7 +81,7 @@ class Task(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def load_data(self, split: str):
-        return np.memmap(self.data_prefix / ('train.bin' if split == 'train' else 'val.bin'), dtype=np.uint16, mode='r')
+        return np.memmap(self.data_prefix / self.name / ('train.bin' if split == 'train' else 'val.bin'), dtype=np.uint16, mode='r')
 
     def preprocess(self, examples):
         result = self.tokenizer(
@@ -112,6 +114,21 @@ class Task(nn.Module):
         }
 
         return [train_data, val_data, metadata]
+
+    def prepare_if_needed(self, train_dataset, val_dataset):
+        train_file = self.data_dir / self.name / 'train.bin'
+        if not train_file.exists():
+            (self.data_dir / self.name).mkdir(parents=True, exist_ok=True)
+
+            train, val, meta = self.prepare_data(train_dataset, val_dataset)
+
+            # save the data
+            val_file = self.data_dir / self.name / 'val.bin'
+            meta_file = self.data_dir / self.name / 'metadata.json'
+            train.tofile(train_file)
+            val.tofile(val_file)
+            with open(meta_file, "w+") as fp:
+                json.dump(meta, fp)
 
     @torch.no_grad()
     def estimate_loss(self, ctx, eval_iters):
