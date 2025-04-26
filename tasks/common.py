@@ -115,10 +115,13 @@ class Task(nn.Module):
 
         return [train_data, val_data, metadata]
 
-    def prepare_if_needed(self, train_dataset, val_dataset):
+    def prepare_if_needed(self, train_dataset_split, val_dataset_split):
         train_file = self.data_dir / self.name / 'train.bin'
         if not train_file.exists():
             (self.data_dir / self.name).mkdir(parents=True, exist_ok=True)
+
+            train_dataset = train_dataset_split.map(self.preprocess, batched=True)
+            val_dataset = val_dataset_split.map(self.preprocess, batched=True)
 
             train, val, meta = self.prepare_data(train_dataset, val_dataset)
 
@@ -129,6 +132,11 @@ class Task(nn.Module):
             val.tofile(val_file)
             with open(meta_file, "w+") as fp:
                 json.dump(meta, fp)
+
+    def get_metadata(self) -> dict:
+        meta_file = self.data_dir / self.name / 'metadata.json'
+        with open(meta_file, "r") as fp:
+            return json.load(fp)
 
     @torch.no_grad()
     def estimate_loss(self, ctx, eval_iters):
