@@ -1,19 +1,17 @@
 import argparse
-import pathlib
-from datasets import load_dataset
-from tasks.classification_sst2 import ClassificationSST2
 import os
-import wandb
-import json
-import torch
+import pathlib
 import time
-from model import GPTConfig, GPT
-import numpy as np
+
 from contextlib import nullcontext
-import math
-import torch.nn as nn
-import torch.nn.functional as F
+from datasets import load_dataset
 import inspect
+import numpy as np
+import torch
+import wandb
+
+from tasks.classification_sst2 import ClassificationSST2
+from model import GPTConfig, GPT
 
 datasets = {
   "sst2": ClassificationSST2
