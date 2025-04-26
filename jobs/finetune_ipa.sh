@@ -55,7 +55,7 @@ echo "Dataset: $dataset_name"
 # Script specific names
 model="openwebtext_ipa_multi_node_12_5"
 wandb_project="ipa_finetuning_sst2_ipa"
-parent_dataset="glue-transcribed"
+parent_dataset="transcribed/glue-ipa"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
 
