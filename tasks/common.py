@@ -116,7 +116,7 @@ class Task(nn.Module):
         return [train_data, val_data, metadata]
 
     def prepare_if_needed(self, train_dataset_split, val_dataset_split):
-        train_file = self.data_dir / self.name / 'train.bin'
+        train_file = self.data_prefix / self.name / 'train.bin'
         if not train_file.exists():
             (self.data_dir / self.name).mkdir(parents=True, exist_ok=True)
 
@@ -134,12 +134,12 @@ class Task(nn.Module):
                 json.dump(meta, fp)
 
     def get_token_count(self) -> int:
-        train_file = self.data_dir / self.name / 'train.bin'
+        train_file = self.data_prefix / self.name / 'train.bin'
         data = np.memmap(train_file, dtype=np.uint16, mode='r')
         return len(data)
 
     def get_metadata(self) -> dict:
-        meta_file = self.data_dir / self.name / 'metadata.json'
+        meta_file = self.data_prefix / self.name / 'metadata.json'
         with open(meta_file, "r") as fp:
             return json.load(fp)
 
