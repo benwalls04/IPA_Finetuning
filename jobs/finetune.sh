@@ -12,7 +12,7 @@
 echo "===== [$(date)] JOB STARTED ====="
 
 # Load required modules
-module load miniconda/24.1.2-py310 cuda/11.8.0
+module load miniconda/24.1.2-py310 cuda/12.4.1
 conda init bash
 conda activate nanogpt_cu124  # TODO change this to your personal environment
 
