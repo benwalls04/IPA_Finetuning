@@ -29,10 +29,13 @@ mkdir -pv $scratch_datasets_prefix $scratch_github_prefix $checkpoints_prefix
 
 repo_name="IPA_Finetuning"
 repo_address="git@github.com:aaron-jencks/$IPA_Finetuning.git"
+repo_branch="robust"
 repo_dir="$scratch_github_prefix/$repo_name"
 if [ ! -d "$repo_dir" ]; then
   cd "$scratch_github_prefix"
   git clone "$repo_address"
+  cd "$repo_name"
+  git checkout "$repo_branch"
 else
   cd "$repo_dir"
   git pull
