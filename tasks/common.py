@@ -126,8 +126,8 @@ class Task(nn.Module):
             train, val, meta = self.prepare_data(train_dataset, val_dataset)
 
             # save the data
-            val_file = self.data_dir / self.name / 'val.bin'
-            meta_file = self.data_dir / self.name / 'metadata.json'
+            val_file = self.data_prefix / self.name / 'val.bin'
+            meta_file = self.data_prefix / self.name / 'metadata.json'
             train.tofile(train_file)
             val.tofile(val_file)
             with open(meta_file, "w+") as fp:
