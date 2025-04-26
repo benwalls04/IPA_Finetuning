@@ -55,6 +55,7 @@ echo "Dataset: $dataset_name"
 # Script specific names
 model="openwebtext_normal_multi_node_12_5"
 wandb_project="ipa_finetuning_sst2_english"
+parent_dataset="nyu-mll/glue"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
 
@@ -66,6 +67,7 @@ echo "===== [$(date)] RUNNING PYTHON SCRIPT ====="
 # Run the actual script
 python finetune.py \
   --dataset "$dataset_name" \
+  --parent_dataset "$parent_dataset" \
   --pretrained_ckpt_path "$checkpoint_path" \
   --out_dir "$checkpoints_prefix" \
   --tokenizer_dir "$tokenizers_prefix" \
