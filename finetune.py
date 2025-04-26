@@ -29,7 +29,7 @@ parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 parser.add_argument('--storage_prefix', type=pathlib.Path, default=pathlib.Path('.'))
 parser.add_argument('--out_dir', type=str, default='checkpoints')
 parser.add_argument('--tokenizer_dir', type=str, default='tokenizers')
-parser.add_argument('--data_dir', type=str, default='data')
+parser.add_argument('--data_dir', type=str, default='datasets')
 parser.add_argument('--tokenizer_name', type=str, default='bpe-normal-number-preservation')
 
 # Training settings
