@@ -143,7 +143,7 @@ device_type = 'cuda' if 'cuda' in args.device else 'cpu'
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[args.dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-meta = model.get_meta()
+meta = model.get_metadata()
 meta_vocab_size = meta['vocab_size']
 meta_block_size = meta['max_length']
 
