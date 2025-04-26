@@ -59,6 +59,9 @@ parent_dataset="transcribed/glue-ipa"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
 
+# because it's a local dataset
+dataset_location="$datasets_prefix/$parent_dataset"
+
 token_data_dir="$scratch_datasets_prefix/$wandb_project"
 mkdir -pv "$token_data_dir"
 
@@ -67,7 +70,7 @@ echo "===== [$(date)] RUNNING PYTHON SCRIPT ====="
 # Run the actual script
 python finetune.py \
   --dataset "$dataset_name" \
-  --parent_dataset "$parent_dataset" \
+  --parent_dataset "$dataset_location" \
   --pretrained_ckpt_path "$checkpoint_path" \
   --out_dir "$checkpoints_prefix" \
   --tokenizer_dir "$tokenizers_prefix" \
