@@ -12,6 +12,7 @@ class ClassificationSST2(Task):
                context_size: int = 1024,
                input_feat: str = 'sentence', output_feat: str = 'label'):
     super().__init__(
+        'sst2',
         device, tokenizer_vocab, tokenizer_merges, data_prefix,
         num_embed, dropout, n_classes, context_size,
         input_feat, output_feat
