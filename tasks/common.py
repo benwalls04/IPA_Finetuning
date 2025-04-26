@@ -25,7 +25,7 @@ class Task(nn.Module):
         self.data_prefix = data_prefix
 
         self.embedding_size = embedding_size
-        self.n_classes = n_classes
+        self.num_classes = n_classes
         self.dropout = dropout
         self.context_window = context_window
 
