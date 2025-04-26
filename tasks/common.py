@@ -14,7 +14,7 @@ class Task(nn.Module):
                  data_prefix: pathlib.Path,
                  embedding_size: int, dropout: float, n_classes: int,
                  context_window: int,
-                 input_feat: str, output_feat: str = 'label'):
+                 input_feat: str, output_feat: str):
         super().__init__()
         self.pretrained_model = None
         self.device = device
