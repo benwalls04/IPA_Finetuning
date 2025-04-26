@@ -25,10 +25,9 @@ parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 
 # Paths
 parser.add_argument('--hf_cache', type=pathlib.Path, default=pathlib.Path('./cache'))
-parser.add_argument('--storage_prefix', type=pathlib.Path, default=pathlib.Path('.'))
-parser.add_argument('--out_dir', type=str, default='checkpoints')
-parser.add_argument('--tokenizer_dir', type=str, default='tokenizers')
-parser.add_argument('--data_dir', type=str, default='datasets')
+parser.add_argument('--out_dir', type=pathlib.Path, default=pathlib.Path('./checkpoints'))
+parser.add_argument('--tokenizer_dir', type=pathlib.Path, default=pathlib.Path('./tokenizers'))
+parser.add_argument('--data_dir', type=pathlib.Path, default=pathlib.Path('./datasets'))
 parser.add_argument('--tokenizer_name', type=str, default='bpe-normal-number-preservation')
 
 # Training settings
@@ -57,18 +56,14 @@ parser.add_argument('--eval_only', action='store_true')
 
 args = parser.parse_args()
 
-out_dir = args.storage_prefix / args.out_dir
-tokenizer_dir = args.storage_prefix / args.tokenizer_dir
-data_dir = args.storage_prefix / args.data_dir
-
 always_save_checkpoint = False
 bias = False
 decay_lr = True
 force_cuda = True
 
 # Update tokenizer path in ClassificationSST2
-vocab_file = tokenizer_dir / f"{args.tokenizer_name}-vocab.json"
-merges_file = tokenizer_dir / f"{args.tokenizer_name}-merges.txt"
+vocab_file = args.tokenizer_dir / f"{args.tokenizer_name}-vocab.json"
+merges_file = args.tokenizer_dir / f"{args.tokenizer_name}-merges.txt"
 
 def configure_optimizers(device_type, model): 
     # First, separate parameters into pretrained model and classification head
@@ -131,7 +126,7 @@ if dataset_arg not in datasets:
 # load the datatset and needed functions 
 dataset = load_dataset("glue", dataset_arg, cache_dir=str(args.hf_cache))
 model_class = datasets[dataset_arg]
-model = model_class(args.device, vocab_file, merges_file, data_dir)
+model = model_class(args.device, vocab_file, merges_file, args.data_dir)
 
 train_dataset = dataset["train"]
 validation_dataset = dataset["validation"]
@@ -140,7 +135,7 @@ model.prepare_if_needed(train_dataset, validation_dataset)
 # setup the GPUs
 if force_cuda and not torch.cuda.is_available():
     raise Exception('CUDA not available')
-os.makedirs(out_dir, exist_ok=True)
+os.makedirs(args.out_dir, exist_ok=True)
 torch.manual_seed(1337)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
@@ -153,7 +148,7 @@ meta_vocab_size = meta['vocab_size']
 meta_block_size = meta['max_length']
 
 # load the pretrained model
-print(f"Resuming training from {out_dir}")
+print(f"Resuming training from {args.out_dir}")
 checkpoint = torch.load(args.pretrained_ckpt_path, map_location=args.device)
 checkpoint_model_args = checkpoint['model_args']
 
@@ -219,7 +214,7 @@ model.warmup_iters = int(model.warmup_iter_ratio * max_iters)
 model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
 
 best_val_loss = float('inf')
-best_checkpoint_path = f"{out_dir}/{dataset_arg}-ckpt.pt"
+best_checkpoint_path = f"{args.out_dir}/{dataset_arg}-ckpt.pt"
 
 # Check if a previous best checkpoint exists
 if os.path.exists(best_checkpoint_path):

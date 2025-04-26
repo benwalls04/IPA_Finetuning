@@ -23,7 +23,8 @@ scratch_prefix="/fs/scratch/PAS2836/ipa_gpt"
 storage_prefix="/fs/ess/PAS2836/ipa_gpt"
 datasets_prefix="$storage_prefix/datasets"
 checkpoints_prefix="$storage_prefix/checkpoints"
-scratch_datasets_prefix="$scratch_prefix/datasets"
+tokenizers_prefix="$storage_prefix/tokenizers"
+scratch_datasets_prefix="$scratch_prefix/tokens"
 scratch_github_prefix="$scratch_prefix/github"
 mkdir -pv $scratch_datasets_prefix $scratch_github_prefix $checkpoints_prefix
 
@@ -57,13 +58,18 @@ wandb_project="ipa_finetuning_sst2_english"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
 
+token_data_dir="$scratch_datasets_prefix/$wandb_project"
+mkdir -pv "$token_data_dir"
+
 echo "===== [$(date)] RUNNING PYTHON SCRIPT ====="
 
 # Run the actual script
 python finetune.py \
   --dataset "$dataset_name" \
   --pretrained_ckpt_path "$checkpoint_path" \
-  --storage_prefix "$storage_prefix" \
+  --out_dir "$checkpoints_prefix" \
+  --tokenizer_dir "$tokenizers_prefix" \
+  --data_dir "$token_data_dir" \
   --hf_cache "$datasets_prefix" \
   --wandb_project "$wandb_project" \
   --wandb_log
