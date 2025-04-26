@@ -155,8 +155,7 @@ meta_block_size = meta['max_length']
 
 # load the pretrained model
 print(f"Resuming training from {out_dir}")
-ckpt_path = os.path.join(out_dir, 'openwebtext_normal_multi_node_12_5/ckpt.pt')
-checkpoint = torch.load(ckpt_path, map_location=args.device)
+checkpoint = torch.load(args.pretrained_ckpt_path, map_location=args.device)
 checkpoint_model_args = checkpoint['model_args']
 
 model_args = dict(n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, block_size=meta_block_size,
