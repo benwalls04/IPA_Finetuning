@@ -24,6 +24,7 @@ parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 
 # Paths
+parser.add_argument('--hf_cache', type=pathlib.Path, default=pathlib.Path('./cache'))
 parser.add_argument('--storage_prefix', type=pathlib.Path, default=pathlib.Path('.'))
 parser.add_argument('--out_dir', type=str, default='checkpoints')
 parser.add_argument('--tokenizer_dir', type=str, default='tokenizers')
@@ -128,9 +129,9 @@ if dataset_arg not in datasets:
     raise ValueError(f"Dataset {dataset_arg} not found. Please choose from: {datasets}")
 
 # load the datatset and needed functions 
-dataset = load_dataset("glue", dataset_arg)
+dataset = load_dataset("glue", dataset_arg, cache_dir=str(args.hf_cache))
 model_class = datasets[dataset_arg]
-model = model_class(args.device)
+model = model_class(args.device, vocab_file, merges_file, data_dir)
 
 train_dataset = dataset["train"]
 validation_dataset = dataset["validation"]
