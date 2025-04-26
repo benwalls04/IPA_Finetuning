@@ -81,7 +81,7 @@ class Task(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def load_data(self, split: str):
-        return np.memmap(self.data_prefix / self.name / ('train.bin' if split == 'train' else 'val.bin'), dtype=np.uint16, mode='r')
+        return np.memmap(self.data_prefix / self.name / f'{split}.bin', dtype=np.uint16, mode='r')
 
     def preprocess(self, examples):
         result = self.tokenizer(
