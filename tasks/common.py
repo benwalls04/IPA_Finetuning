@@ -34,7 +34,7 @@ class Task(nn.Module):
         self.output_feat = output_feat
         if self.ipa:
             self.input_feat += '-phoneme'
-            self.output_feat += '-phoneme'
+            # self.output_feat += '-phoneme'  # label is a class
 
         ## 1e-5, 2e-5, 3e-5
         self.learning_rate = 3e-5
