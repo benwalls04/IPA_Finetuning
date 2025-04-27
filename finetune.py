@@ -12,9 +12,11 @@ import wandb
 
 from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
+from tasks.cola import ClassificationCOLA
 
 datasets = {
-    "sst2": ClassificationSST2
+    "sst2": ClassificationSST2,
+    "cola": ClassificationCOLA
 }
 
 parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
