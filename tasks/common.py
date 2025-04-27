@@ -15,7 +15,7 @@ class Task(nn.Module):
                  data_prefix: pathlib.Path,
                  embedding_size: int, dropout: float, n_classes: int,
                  context_window: int,
-                 input_feat: str, output_feat: str):
+                 input_feat: str, output_feat: str, ipa: bool = False):
         super().__init__()
         self.name = name
         self.pretrained_model = None
@@ -23,6 +23,7 @@ class Task(nn.Module):
         self.tokenizer_vocab = tokenizer_vocab
         self.tokenizer_merges = tokenizer_merges
         self.data_prefix = data_prefix
+        self.ipa = ipa
 
         self.embedding_size = embedding_size
         self.num_classes = n_classes
@@ -31,6 +32,9 @@ class Task(nn.Module):
 
         self.input_feat = input_feat
         self.output_feat = output_feat
+        if self.ipa:
+            self.input_feat += '-phoneme'
+            self.output_feat += '-phoneme'
 
         ## 1e-5, 2e-5, 3e-5
         self.learning_rate = 3e-5

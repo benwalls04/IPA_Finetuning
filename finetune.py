@@ -14,7 +14,7 @@ from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
 
 datasets = {
-  "sst2": ClassificationSST2
+    "sst2": ClassificationSST2
 }
 
 parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
@@ -26,6 +26,7 @@ parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 # Huggingface settings
 parser.add_argument('--parent_dataset', type=str, default='nyu-mll/glue')
 parser.add_argument('--no_subset', action='store_true')
+parser.add_argument('--use_ipa', action='store_true')
 
 # Paths
 parser.add_argument('--hf_cache', type=pathlib.Path, default=pathlib.Path('./cache'))
@@ -133,7 +134,7 @@ if args.no_subset:
 else:
     dataset = load_dataset(args.parent_dataset, dataset_arg, cache_dir=str(args.hf_cache))
 model_class = datasets[dataset_arg]
-model = model_class(args.device, vocab_file, merges_file, args.data_dir)
+model = model_class(args.device, vocab_file, merges_file, args.data_dir, ipa=args.use_ipa)
 
 train_dataset = dataset["train"]
 validation_dataset = dataset["validation"]
