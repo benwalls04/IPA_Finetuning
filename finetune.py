@@ -25,6 +25,7 @@ parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 
 # Huggingface settings
 parser.add_argument('--parent_dataset', type=str, default='nyu-mll/glue')
+parser.add_argument('--no_subset', action='store_true')
 
 # Paths
 parser.add_argument('--hf_cache', type=pathlib.Path, default=pathlib.Path('./cache'))
@@ -126,8 +127,11 @@ dataset_arg = args.dataset
 if dataset_arg not in datasets:
     raise ValueError(f"Dataset {dataset_arg} not found. Please choose from: {datasets}")
 
-# load the datatset and needed functions 
-dataset = load_dataset(args.parent_dataset, dataset_arg, cache_dir=str(args.hf_cache))
+# load the datatset and needed functions
+if args.no_subset:
+    dataset = load_dataset(args.parent_dataset)
+else:
+    dataset = load_dataset(args.parent_dataset, dataset_arg, cache_dir=str(args.hf_cache))
 model_class = datasets[dataset_arg]
 model = model_class(args.device, vocab_file, merges_file, args.data_dir)
 
