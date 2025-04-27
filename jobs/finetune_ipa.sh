@@ -71,6 +71,7 @@ echo "===== [$(date)] RUNNING PYTHON SCRIPT ====="
 python finetune.py \
   --dataset "$dataset_name" \
   --parent_dataset "$dataset_location" --no_subset \
+  --use_ipa \
   --pretrained_ckpt_path "$checkpoint_path" \
   --out_dir "$checkpoints_prefix" \
   --tokenizer_dir "$tokenizers_prefix" \
