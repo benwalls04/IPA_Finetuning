@@ -56,6 +56,7 @@ echo "Dataset: $dataset_name"
 model="openwebtext_ipa_multi_node_12_5"
 wandb_project="ipa_finetuning_sst2_ipa"
 parent_dataset="transcribed/glue-ipa"
+tokenizer_name="bpe-ipa-number-preservation"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
 
@@ -75,6 +76,7 @@ python finetune.py \
   --pretrained_ckpt_path "$checkpoint_path" \
   --out_dir "$checkpoints_prefix" \
   --tokenizer_dir "$tokenizers_prefix" \
+  --tokenizer_name "$tokenizer_name" \
   --data_dir "$token_data_dir" \
   --hf_cache "$datasets_prefix" \
   --wandb_project "$wandb_project" \
