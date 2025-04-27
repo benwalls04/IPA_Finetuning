@@ -119,9 +119,9 @@ class Task(nn.Module):
 
         return [train_data, val_data, metadata]
 
-    def prepare_if_needed(self, train_dataset_split, val_dataset_split):
+    def prepare_if_needed(self, train_dataset_split, val_dataset_split, force: bool = False):
         train_file = self.data_prefix / self.name / 'train.bin'
-        if not train_file.exists():
+        if force or not train_file.exists():
             (self.data_prefix / self.name).mkdir(parents=True, exist_ok=True)
 
             train_dataset = train_dataset_split.map(self.preprocess, batched=True)

@@ -23,11 +23,12 @@ parser = argparse.ArgumentParser(description="Finetune a model on a classificati
 parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 
-# Huggingface settings
+# Dataset settings
 parser.add_argument('--parent_dataset', type=str, default='nyu-mll/glue')
 parser.add_argument('--no_subset', action='store_true')
 parser.add_argument('--from_disk', action='store_true')
 parser.add_argument('--use_ipa', action='store_true')
+parser.add_argument('--force_tokenization', action='store_true')
 
 # Paths
 parser.add_argument('--hf_cache', type=pathlib.Path, default=pathlib.Path('./cache'))
@@ -144,7 +145,7 @@ model = model_class(args.device, vocab_file, merges_file, args.data_dir, ipa=arg
 
 train_dataset = dataset["train"]
 validation_dataset = dataset["validation"]
-model.prepare_if_needed(train_dataset, validation_dataset)
+model.prepare_if_needed(train_dataset, validation_dataset, args.force_tokenization)
 
 # setup the GPUs
 if force_cuda and not torch.cuda.is_available():
