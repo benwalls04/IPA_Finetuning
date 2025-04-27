@@ -4,7 +4,7 @@ import pathlib
 import time
 
 from contextlib import nullcontext
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 import inspect
 import numpy as np
 import torch
@@ -26,6 +26,7 @@ parser.add_argument('--pretrained_ckpt_path', type=pathlib.Path, required=True)
 # Huggingface settings
 parser.add_argument('--parent_dataset', type=str, default='nyu-mll/glue')
 parser.add_argument('--no_subset', action='store_true')
+parser.add_argument('--from_disk', action='store_true')
 parser.add_argument('--use_ipa', action='store_true')
 
 # Paths
@@ -130,8 +131,13 @@ if dataset_arg not in datasets:
 
 # load the datatset and needed functions
 if args.no_subset:
-    dataset = load_dataset(args.parent_dataset)
+    if args.from_disk:
+        dataset = load_from_disk(args.parent_dataset)
+    else:
+        dataset = load_dataset(args.parent_dataset)
 else:
+    if args.from_disk:
+        raise Exception('can\'t load from disk with subset.')
     dataset = load_dataset(args.parent_dataset, dataset_arg, cache_dir=str(args.hf_cache))
 model_class = datasets[dataset_arg]
 model = model_class(args.device, vocab_file, merges_file, args.data_dir, ipa=args.use_ipa)
