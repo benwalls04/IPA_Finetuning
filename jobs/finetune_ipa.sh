@@ -60,7 +60,7 @@ parent_dataset="transcribed/glue-ipa"
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
 
 # because it's a local dataset
-dataset_location="$datasets_prefix/$parent_dataset"
+dataset_location="$datasets_prefix/$parent_dataset/$dataset_name"
 
 token_data_dir="$scratch_datasets_prefix/$wandb_project"
 mkdir -pv "$token_data_dir"
