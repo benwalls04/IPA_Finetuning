@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ipa_finetune_sst2_english
+#SBATCH --job-name=ipa_finetune_sst2_ipa
 #SBATCH --account=PAS2836
 #SBATCH --output=/fs/ess/PAS2836/ipa_gpt/jobs/logs/%x-%j.out
 #SBATCH --error=/fs/ess/PAS2836/ipa_gpt/jobs/logs/errors/%x-%j.err
@@ -53,11 +53,15 @@ dataset_name="$1"
 echo "Dataset: $dataset_name"
 
 # Script specific names
-model="openwebtext_normal_multi_node_12_5"
-wandb_project="ipa_finetuning_sst2_english"
-parent_dataset="nyu-mll/glue"
+model="openwebtext_ipa_multi_node_12_5"
+wandb_project="ipa_finetuning_sst2_ipa"
+parent_dataset="transcribed/glue-ipa"
+tokenizer_name="bpe-ipa-number-preservation"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
+
+# because it's a local dataset
+dataset_location="$datasets_prefix/$parent_dataset/$dataset_name"
 
 token_data_dir="$scratch_datasets_prefix/$wandb_project"
 mkdir -pv "$token_data_dir"
@@ -67,10 +71,12 @@ echo "===== [$(date)] RUNNING PYTHON SCRIPT ====="
 # Run the actual script
 python finetune.py \
   --dataset "$dataset_name" \
-  --parent_dataset "$parent_dataset" \
+  --parent_dataset "$dataset_location" --no_subset --from_disk \
+  --use_ipa \
   --pretrained_ckpt_path "$checkpoint_path" \
   --out_dir "$checkpoints_prefix" \
   --tokenizer_dir "$tokenizers_prefix" \
+  --tokenizer_name "$tokenizer_name" \
   --data_dir "$token_data_dir" \
   --hf_cache "$datasets_prefix" \
   --wandb_project "$wandb_project" \
