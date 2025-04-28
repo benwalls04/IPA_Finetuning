@@ -12,35 +12,36 @@ import wandb
 
 from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
+from tasks.cola import ClassificationCOLA
 
 # ===== Configuration and Setup Functions =====
 def configure_device(args):
     # Check if CUDA is required but not available
     if not args.no_cuda and not torch.cuda.is_available():
         raise Exception('CUDA not available')
-    
+
     # Convert out_dir to Path object and create directory if it doesn't exist
     args.out_dir = pathlib.Path(args.out_dir)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Set random seed for reproducibility
     torch.manual_seed(1337)
-    
+
     torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-    
+
     # Determine device type based on args.device
     device_type = 'cuda' if 'cuda' in args.device else 'cpu'
-    
+
     # Map dtype string to PyTorch dtype
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[args.dtype]
-    
+
     # Create context manager for mixed precision training
     # - nullcontext() does nothing when using CPU
     # - autocast enables automatic mixed precision on GPU
     ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-    return ctx 
+    return ctx
 
 def configure_optimizers(device_type, model): 
     # First, separate parameters into pretrained model and classification head
@@ -95,8 +96,8 @@ def prepare_datasets(args, model):
         if args.from_disk:
             raise Exception('can\'t load from disk with subset.')
         dataset = load_dataset(args.parent_dataset, args.dataset, cache_dir=str(args.hf_cache))
-        
-    # Split train and validation examples 
+
+    # Split train and validation examples
     train_dataset = dataset["train"]
     validation_dataset = dataset["validation"]
 
@@ -104,7 +105,7 @@ def prepare_datasets(args, model):
     model.prepare_if_needed(train_dataset, validation_dataset, args.force_tokenization)
 
 def load_pretrained_model(args, model, bias=False):
-    # Get metadata for this model type 
+    # Get metadata for this model type
     meta = model.get_metadata()
     meta_vocab_size = meta['vocab_size']
     meta_block_size = meta['max_length']
@@ -115,7 +116,7 @@ def load_pretrained_model(args, model, bias=False):
     checkpoint_model_args = checkpoint['model_args']
 
 
-    # Initialize model params to given values 
+    # Initialize model params to given values
     model_args = dict(n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, block_size=meta_block_size,
                     bias=bias, vocab_size=meta_vocab_size, dropout=args.dropout)
 
@@ -124,23 +125,23 @@ def load_pretrained_model(args, model, bias=False):
     for k in ['n_layer', 'n_head', 'n_embd', 'bias', 'block_size', 'vocab_size']:
         model_args[k] = checkpoint_model_args[k]
 
-    
-    # Create the nanoGPT instance to load in saved weights 
+
+    # Create the nanoGPT instance to load in saved weights
     gptconf = GPTConfig(**model_args)
     pretrained_model = GPT(gptconf)
     state_dict = checkpoint['model']
 
 
-    # Clean up the saved state 
+    # Clean up the saved state
     unwanted_prefix = '_orig_mod.'
     for k,v in list(state_dict.items()):
         if k.startswith(unwanted_prefix):
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
 
 
-    # Only load the parameters that match the checkpoint weights 
+    # Only load the parameters that match the checkpoint weights
     model_dict = pretrained_model.state_dict()
-    filtered_state_dict = {k: v for k, v in state_dict.items() 
+    filtered_state_dict = {k: v for k, v in state_dict.items()
                         if k in model_dict and v.shape == model_dict[k].shape}
     model_dict.update(filtered_state_dict)
     pretrained_model.load_state_dict(model_dict)
@@ -151,11 +152,11 @@ def load_pretrained_model(args, model, bias=False):
     model.pretrained_model = pretrained_model
     model.to(args.device)  # Move the entire model to the device
 
-    # Set up scaler and optimizer for the training loop  
+    # Set up scaler and optimizer for the training loop
     scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))
     optimizer = configure_optimizers(args.device, model)
 
-    return model, optimizer, scaler 
+    return model, optimizer, scaler
 
 # ===== Training Functions =====
 def get_lr(model, it):
@@ -178,7 +179,7 @@ def get_max_iters(model, gradient_accumulation_steps, num_epochs):
     max_iters = int(np.ceil(token_count / tokens_per_iter)) * num_epochs
     model.warmup_iters = int(model.warmup_iter_ratio * max_iters)
     model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
-    return max_iters    
+    return max_iters
 
 def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args):
     if args.wandb_log:
@@ -197,56 +198,56 @@ def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_check
         }
         wandb.init(project=args.wandb_project, name=f"{args.dataset}-{time.time()}", config=config)
 
-    # Get the first batch to start the traiing loop 
+    # Get the first batch to start the traiing loop
     get_batch = model.get_batch
-    X, Y = get_batch('train') 
+    X, Y = get_batch('train')
     iter_num = 0
 
-    # Ensure all parameters can learn 
+    # Ensure all parameters can learn
     for param in model.pretrained_model.parameters():
-        param.requires_grad = True 
+        param.requires_grad = True
 
     while True:
-        # Get the learning rate based on our scheduler 
+        # Get the learning rate based on our scheduler
         lr = get_lr(model, iter_num) if not args.no_decay_lr else model.learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
         # Option for evaluation-only:
-        # Load a checkpoint and get the loss after one iteration     
+        # Load a checkpoint and get the loss after one iteration
         if iter_num == 0 and args.eval_only:
             break
 
-        # Accumulate gradients across multiple batches 
+        # Accumulate gradients across multiple batches
         for micro_step in range(args.gradient_accumulation_steps):
             with ctx:
                 logits, loss = model(X, Y)
                 loss = loss / args.gradient_accumulation_steps
-            
+
             X, Y = get_batch('train')
-            
+
             scaler.scale(loss).backward()
 
-        # For preventing gradeints from exploding 
+        # For preventing gradeints from exploding
         if model.grad_clip != 0.0:
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), model.grad_clip)
 
-        # Step 
+        # Step
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
 
-        # Evaluate the loss every eval_interval iterations     
+        # Evaluate the loss every eval_interval iterations
         if iter_num % args.eval_interval == 0:
             losses = model.estimate_loss(ctx, args.eval_iters)
             print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val f2 {losses['val_f2']:.4f}, val accuracy {losses['val_accuracy']:.4f}")
-            
+
              # Check if this is the best validation loss so far
             if losses['val'] < best_val_loss:
                 best_val_loss = losses['val']
-                print(f"New best validation loss: {best_val_loss:.4f}, saving checkpoint to {best_checkpoint_path}")    
-        
+                print(f"New best validation loss: {best_val_loss:.4f}, saving checkpoint to {best_checkpoint_path}")
+
                 # Save the best model checkpoint
                 checkpoint = {
                     'model': model.state_dict(),
@@ -279,10 +280,11 @@ def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_check
         if iter_num > max_iters:
             break
 
-def main(): 
-    # maps datasets to finetuning models 
+def main():
+    # maps datasets to finetuning models
     datasets = {
-        "sst2": ClassificationSST2
+        "sst2": ClassificationSST2,
+        "cola": ClassificationCOLA
     }
 
     parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
@@ -336,7 +338,7 @@ def main():
 
     # Update tokenizer path in ClassificationSST2
     vocab_file = pathlib.Path(args.tokenizer_dir) / f"{args.tokenizer_name}-vocab.json"
-    merges_file = pathlib.Path(args.tokenizer_dir) / f"{args.tokenizer_name}-merges.txt"    
+    merges_file = pathlib.Path(args.tokenizer_dir) / f"{args.tokenizer_name}-merges.txt"
 
 
     # Ensure dataset is a valid option
@@ -344,20 +346,20 @@ def main():
         raise ValueError(f"Dataset {args.dataset} not found. Please choose from: {datasets}")
 
 
-    # Initialize model for the given dataset 
+    # Initialize model for the given dataset
     model_class = datasets[args.dataset]
-    model = model_class(args.device, vocab_file, merges_file, args.data_dir, 
-                       num_embed=args.n_embd, dropout=args.dropout, 
+    model = model_class(args.device, vocab_file, merges_file, args.data_dir,
+                       num_embed=args.n_embd, dropout=args.dropout,
                        context_size=args.block_size, ipa=args.use_ipa)
 
 
-    # Configurations 
+    # Configurations
     prepare_datasets(args, model)
     ctx = configure_device(args)
     model, optimizer, scaler = load_pretrained_model(args, model)
     max_iters = get_max_iters(model, args.gradient_accumulation_steps, args.num_epochs)
 
-    
+
     # Check if a previous best checkpoint exists
     best_val_loss = float('inf')
     best_checkpoint_path = pathlib.Path(args.out_dir) / f"{args.dataset}-ckpt.pt"
@@ -368,7 +370,7 @@ def main():
         print(f"Previous best validation loss: {best_val_loss:.4f}")
 
 
-    # Finetune to the given downstream task 
+    # Finetune to the given downstream task
     finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args)
 
 if __name__ == "__main__":
