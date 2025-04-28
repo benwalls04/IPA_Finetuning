@@ -4,6 +4,8 @@ import pathlib
 import time
 
 from contextlib import nullcontext
+from typing import Dict
+
 from datasets import load_dataset, load_from_disk
 import inspect
 import numpy as np
@@ -12,37 +14,40 @@ import wandb
 
 from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
+from tasks.cola import ClassificationCOLA
+from tasks.common import Task
+
 
 # ===== Configuration and Setup Functions =====
 def configure_device(args):
     # Check if CUDA is required but not available
     if not args.no_cuda and not torch.cuda.is_available():
         raise Exception('CUDA not available')
-    
+
     # Convert out_dir to Path object and create directory if it doesn't exist
     args.out_dir = pathlib.Path(args.out_dir)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Set random seed for reproducibility
     torch.manual_seed(1337)
-    
+
     torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-    
+
     # Determine device type based on args.device
     device_type = 'cuda' if 'cuda' in args.device else 'cpu'
-    
+
     # Map dtype string to PyTorch dtype
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[args.dtype]
-    
+
     # Create context manager for mixed precision training
     # - nullcontext() does nothing when using CPU
     # - autocast enables automatic mixed precision on GPU
     ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-    return ctx 
+    return ctx
 
-def configure_optimizers(device_type, model): 
+def configure_optimizers(device_type, model: Task):
     # First, separate parameters into pretrained model and classification head
     pretrained_params = list(model.pretrained_model.parameters())
     pretrained_param_ids = set(id(p) for p in pretrained_params)
@@ -63,9 +68,13 @@ def configure_optimizers(device_type, model):
     
     # Create optimizer groups with different learning rates
     optim_groups = [
-        {'params': pretrained_decay_params, 'weight_decay': model.weight_decay, 'lr': model.learning_rate * 0.1},  # Lower LR for pretrained
-        {'params': pretrained_nodecay_params, 'weight_decay': 0.0, 'lr': model.learning_rate * 0.1},  # Lower LR for pretrained
-        {'params': classifier_decay_params, 'weight_decay': model.weight_decay},  # Default LR for classifier
+        {
+            'params': pretrained_decay_params,
+            'weight_decay': model.hyperparameters.weight_decay,
+            'lr': model.hyperparameters.learning_rate * 0.1
+        },  # Lower LR for pretrained
+        {'params': pretrained_nodecay_params, 'weight_decay': 0.0, 'lr': model.hyperparameters.learning_rate * 0.1},  # Lower LR for pretrained
+        {'params': classifier_decay_params, 'weight_decay': model.hyperparameters.weight_decay},  # Default LR for classifier
         {'params': classifier_nodecay_params, 'weight_decay': 0.0}  # Default LR for classifier
     ]
     
@@ -78,7 +87,12 @@ def configure_optimizers(device_type, model):
     fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
     use_fused = fused_available and device_type == 'cuda'
     extra_args = dict(fused=True) if use_fused else dict()
-    optimizer = torch.optim.AdamW(optim_groups, lr=model.learning_rate, betas=(model.beta1, model.beta2), **extra_args)
+    optimizer = torch.optim.AdamW(
+        optim_groups,
+        lr=model.hyperparameters.learning_rate,
+        betas=(model.hyperparameters.beta1, model.hyperparameters.beta2),
+        **extra_args
+    )
     print(f"using fused AdamW: {use_fused}")
     
     return optimizer
@@ -95,16 +109,16 @@ def prepare_datasets(args, model):
         if args.from_disk:
             raise Exception('can\'t load from disk with subset.')
         dataset = load_dataset(args.parent_dataset, args.dataset, cache_dir=str(args.hf_cache))
-        
-    # Split train and validation examples 
+
+    # Split train and validation examples
     train_dataset = dataset["train"]
     validation_dataset = dataset["validation"]
 
     # Prepare bin files if they don't exist
     model.prepare_if_needed(train_dataset, validation_dataset, args.force_tokenization)
 
-def load_pretrained_model(args, model, bias=False):
-    # Get metadata for this model type 
+def load_pretrained_model(args, model: Task, bias=False):
+    # Get metadata for this model type
     meta = model.get_metadata()
     meta_vocab_size = meta['vocab_size']
     meta_block_size = meta['max_length']
@@ -115,7 +129,7 @@ def load_pretrained_model(args, model, bias=False):
     checkpoint_model_args = checkpoint['model_args']
 
 
-    # Initialize model params to given values 
+    # Initialize model params to given values
     model_args = dict(n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, block_size=meta_block_size,
                     bias=bias, vocab_size=meta_vocab_size, dropout=args.dropout)
 
@@ -124,23 +138,23 @@ def load_pretrained_model(args, model, bias=False):
     for k in ['n_layer', 'n_head', 'n_embd', 'bias', 'block_size', 'vocab_size']:
         model_args[k] = checkpoint_model_args[k]
 
-    
-    # Create the nanoGPT instance to load in saved weights 
+
+    # Create the nanoGPT instance to load in saved weights
     gptconf = GPTConfig(**model_args)
     pretrained_model = GPT(gptconf)
     state_dict = checkpoint['model']
 
 
-    # Clean up the saved state 
+    # Clean up the saved state
     unwanted_prefix = '_orig_mod.'
     for k,v in list(state_dict.items()):
         if k.startswith(unwanted_prefix):
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
 
 
-    # Only load the parameters that match the checkpoint weights 
+    # Only load the parameters that match the checkpoint weights
     model_dict = pretrained_model.state_dict()
-    filtered_state_dict = {k: v for k, v in state_dict.items() 
+    filtered_state_dict = {k: v for k, v in state_dict.items()
                         if k in model_dict and v.shape == model_dict[k].shape}
     model_dict.update(filtered_state_dict)
     pretrained_model.load_state_dict(model_dict)
@@ -151,102 +165,102 @@ def load_pretrained_model(args, model, bias=False):
     model.pretrained_model = pretrained_model
     model.to(args.device)  # Move the entire model to the device
 
-    # Set up scaler and optimizer for the training loop  
+    # Set up scaler and optimizer for the training loop
     scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))
     optimizer = configure_optimizers(args.device, model)
 
     return model, optimizer, scaler, model_args
 
 # ===== Training Functions =====
-def get_lr(model, it):
+def get_lr(model: Task, it):
     # 1) linear warmup for warmup_iters steps
-    if it < model.warmup_iters:
-        return model.learning_rate * (it + 1) / (model.warmup_iters + 1)
+    if it < model.hyperparameters.warmup_iters:
+        return model.hyperparameters.learning_rate * (it + 1) / (model.hyperparameters.warmup_iters + 1)
     # 2) if it > lr_decay_iters, return min learning rate
-    if it > model.lr_decay_iters:
-        return model.min_lr
+    if it > model.hyperparameters.lr_decay_iters:
+        return model.hyperparameters.min_lr
     # 3) in between, use linear decay down to min learning rate
-    decay_ratio = (it - model.warmup_iters) / (model.lr_decay_iters - model.warmup_iters)
+    decay_ratio = (it - model.hyperparameters.warmup_iters) / (model.hyperparameters.lr_decay_iters - model.hyperparameters.warmup_iters)
     assert 0 <= decay_ratio <= 1
     # Linear decay (instead of cosine)
-    return model.learning_rate - decay_ratio * (model.learning_rate - model.min_lr)
+    return model.hyperparameters.learning_rate - decay_ratio * (model.hyperparameters.learning_rate - model.hyperparameters.min_lr)
 
-def get_max_iters(model, gradient_accumulation_steps, num_epochs):
+def get_max_iters(model: Task, gradient_accumulation_steps, num_epochs):
     # calculate number of iterations required
-    tokens_per_iter = gradient_accumulation_steps * model.batch_size * model.context_window
+    tokens_per_iter = gradient_accumulation_steps * model.hyperparameters.batch_size * model.context_window
     token_count = model.get_token_count()
     max_iters = int(np.ceil(token_count / tokens_per_iter)) * num_epochs
-    model.warmup_iters = int(model.warmup_iter_ratio * max_iters)
-    model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
-    return max_iters    
+    model.hyperparameters.warmup_iters = int(model.hyperparameters.warmup_iter_ratio * max_iters)
+    model.hyperparameters.lr_decay_iters = int(model.hyperparameters.lr_decay_iter_ratio * max_iters)
+    return max_iters
 
-def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, model_args):
+def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, model_args):
     if args.wandb_log:
         config = {
-            "learning_rate": model.learning_rate,
-            "weight_decay": model.weight_decay,
-            "beta1": model.beta1,
-            "beta2": model.beta2,
-            "grad_clip": model.grad_clip,
+            "learning_rate": model.hyperparameters.learning_rate,
+            "weight_decay": model.hyperparameters.weight_decay,
+            "beta1": model.hyperparameters.beta1,
+            "beta2": model.hyperparameters.beta2,
+            "grad_clip": model.hyperparameters.grad_clip,
             "dropout": model.dropout,
-            "warmup_iter_ratio": model.warmup_iter_ratio,
-            "lr_decay_iter_ratio": model.lr_decay_iter_ratio,
-            "min_lr": model.min_lr,
+            "warmup_iter_ratio": model.hyperparameters.warmup_iter_ratio,
+            "lr_decay_iter_ratio": model.hyperparameters.lr_decay_iter_ratio,
+            "min_lr": model.hyperparameters.min_lr,
             "num_epochs": args.num_epochs,
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
         }
         wandb.init(project=args.wandb_project, name=f"{args.dataset}-{time.time()}", config=config)
 
-    # Get the first batch to start the traiing loop 
+    # Get the first batch to start the traiing loop
     get_batch = model.get_batch
-    X, Y = get_batch('train') 
+    X, Y = get_batch('train')
     iter_num = 0
 
-    # Ensure all parameters can learn 
+    # Ensure all parameters can learn
     for param in model.pretrained_model.parameters():
-        param.requires_grad = True 
+        param.requires_grad = True
 
     while True:
-        # Get the learning rate based on our scheduler 
-        lr = get_lr(model, iter_num) if not args.no_decay_lr else model.learning_rate
+        # Get the learning rate based on our scheduler
+        lr = get_lr(model, iter_num) if not args.no_decay_lr else model.hyperparameters.learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
         # Option for evaluation-only:
-        # Load a checkpoint and get the loss after one iteration     
+        # Load a checkpoint and get the loss after one iteration
         if iter_num == 0 and args.eval_only:
             break
 
-        # Accumulate gradients across multiple batches 
+        # Accumulate gradients across multiple batches
         for micro_step in range(args.gradient_accumulation_steps):
             with ctx:
                 logits, loss = model(X, Y)
                 loss = loss / args.gradient_accumulation_steps
-            
+
             X, Y = get_batch('train')
-            
+
             scaler.scale(loss).backward()
 
-        # For preventing gradeints from exploding 
-        if model.grad_clip != 0.0:
+        # For preventing gradeints from exploding
+        if model.hyperparameters.grad_clip != 0.0:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), model.grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), model.hyperparameters.grad_clip)
 
-        # Step 
+        # Step
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
 
-        # Evaluate the loss every eval_interval iterations     
+        # Evaluate the loss every eval_interval iterations
         if iter_num % args.eval_interval == 0:
             losses = model.estimate_loss(ctx, args.eval_iters)
             print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val f2 {losses['val_f2']:.4f}, val accuracy {losses['val_accuracy']:.4f}")
-            
+
              # Check if this is the best validation loss so far
             if losses['val'] < best_val_loss:
                 best_val_loss = losses['val']
-                print(f"New best validation loss: {best_val_loss:.4f}, saving checkpoint to {best_checkpoint_path}")    
-        
+                print(f"New best validation loss: {best_val_loss:.4f}, saving checkpoint to {best_checkpoint_path}")
+
                 # Save the best model checkpoint
                 checkpoint = {
                     'model': model.state_dict(),
@@ -279,10 +293,11 @@ def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_check
         if iter_num > max_iters:
             break
 
-def main(): 
-    # maps datasets to finetuning models 
-    datasets = {
-        "sst2": ClassificationSST2
+def main():
+    # maps datasets to finetuning models
+    datasets: Dict[str, Task] = {
+        "sst2": ClassificationSST2,
+        "cola": ClassificationCOLA
     }
 
     parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
@@ -318,6 +333,19 @@ def main():
     parser.add_argument('--n_embd', type=int, default=768)
     parser.add_argument('--block_size', type=int, default=1024)
 
+    def parse_key_value(s):
+        if '=' not in s:
+            raise argparse.ArgumentTypeError(
+                f"Invalid hyperparameter '{s}'. Expected format: key=value"
+            )
+        key, value = s.split('=', 1)  # Split only on the first '='
+        return key, value
+
+    parser.add_argument(
+        '--hyperparameters', type=parse_key_value,
+        nargs='*', help='allows overriding of hyperparameters, must take the form of "parameter=value"'
+    )
+
     # Device settings
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
@@ -336,7 +364,7 @@ def main():
 
     # Update tokenizer path in ClassificationSST2
     vocab_file = pathlib.Path(args.tokenizer_dir) / f"{args.tokenizer_name}-vocab.json"
-    merges_file = pathlib.Path(args.tokenizer_dir) / f"{args.tokenizer_name}-merges.txt"    
+    merges_file = pathlib.Path(args.tokenizer_dir) / f"{args.tokenizer_name}-merges.txt"
 
 
     # Ensure dataset is a valid option
@@ -344,20 +372,23 @@ def main():
         raise ValueError(f"Dataset {args.dataset} not found. Please choose from: {datasets}")
 
 
-    # Initialize model for the given dataset 
+    # Initialize model for the given dataset
     model_class = datasets[args.dataset]
-    model = model_class(args.device, vocab_file, merges_file, args.data_dir, 
-                       num_embed=args.n_embd, dropout=args.dropout, 
+    model = model_class(args.device, vocab_file, merges_file, args.data_dir,
+                       num_embed=args.n_embd, dropout=args.dropout,
                        context_size=args.block_size, ipa=args.use_ipa)
+    model.hyperparameters.override_settings(**{
+        k: v for k, v in args.hyperparameters
+    })
 
 
-    # Configurations 
+    # Configurations
     prepare_datasets(args, model)
     ctx = configure_device(args)
     model, optimizer, scaler, margs = load_pretrained_model(args, model)
     max_iters = get_max_iters(model, args.gradient_accumulation_steps, args.num_epochs)
 
-    
+
     # Check if a previous best checkpoint exists
     best_val_loss = float('inf')
     best_checkpoint_path = pathlib.Path(args.out_dir) / f"{args.dataset}-ckpt.pt"
@@ -367,8 +398,7 @@ def main():
         best_val_loss = best_checkpoint.get('val_loss', float('inf'))
         print(f"Previous best validation loss: {best_val_loss:.4f}")
 
-
-    # Finetune to the given downstream task 
+    # Finetune to the given downstream task
     finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, margs)
 
 if __name__ == "__main__":
