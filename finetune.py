@@ -13,6 +13,8 @@ import wandb
 from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
 from tasks.cola import ClassificationCOLA
+from tasks.common import Task
+
 
 # ===== Configuration and Setup Functions =====
 def configure_device(args):
@@ -43,7 +45,7 @@ def configure_device(args):
 
     return ctx
 
-def configure_optimizers(device_type, model): 
+def configure_optimizers(device_type, model: Task):
     # First, separate parameters into pretrained model and classification head
     pretrained_params = list(model.pretrained_model.parameters())
     pretrained_param_ids = set(id(p) for p in pretrained_params)
@@ -104,7 +106,7 @@ def prepare_datasets(args, model):
     # Prepare bin files if they don't exist
     model.prepare_if_needed(train_dataset, validation_dataset, args.force_tokenization)
 
-def load_pretrained_model(args, model, bias=False):
+def load_pretrained_model(args, model: Task, bias=False):
     # Get metadata for this model type
     meta = model.get_metadata()
     meta_vocab_size = meta['vocab_size']
@@ -156,10 +158,10 @@ def load_pretrained_model(args, model, bias=False):
     scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))
     optimizer = configure_optimizers(args.device, model)
 
-    return model, optimizer, scaler
+    return model, optimizer, scaler, model_args
 
 # ===== Training Functions =====
-def get_lr(model, it):
+def get_lr(model: Task, it):
     # 1) linear warmup for warmup_iters steps
     if it < model.warmup_iters:
         return model.learning_rate * (it + 1) / (model.warmup_iters + 1)
@@ -172,7 +174,7 @@ def get_lr(model, it):
     # Linear decay (instead of cosine)
     return model.learning_rate - decay_ratio * (model.learning_rate - model.min_lr)
 
-def get_max_iters(model, gradient_accumulation_steps, num_epochs):
+def get_max_iters(model: Task, gradient_accumulation_steps, num_epochs):
     # calculate number of iterations required
     tokens_per_iter = gradient_accumulation_steps * model.batch_size * model.context_window
     token_count = model.get_token_count()
@@ -181,7 +183,7 @@ def get_max_iters(model, gradient_accumulation_steps, num_epochs):
     model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
     return max_iters
 
-def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args):
+def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, model_args):
     if args.wandb_log:
         config = {
             "learning_rate": model.learning_rate,
@@ -356,7 +358,7 @@ def main():
     # Configurations
     prepare_datasets(args, model)
     ctx = configure_device(args)
-    model, optimizer, scaler = load_pretrained_model(args, model)
+    model, optimizer, scaler, margs = load_pretrained_model(args, model)
     max_iters = get_max_iters(model, args.gradient_accumulation_steps, args.num_epochs)
 
 
@@ -371,7 +373,7 @@ def main():
 
 
     # Finetune to the given downstream task
-    finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args)
+    finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, margs)
 
 if __name__ == "__main__":
     main()
