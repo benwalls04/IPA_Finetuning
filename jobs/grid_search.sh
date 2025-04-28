@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ipa_grid_search_sst2_english
+#SBATCH --job-name=ipa_finetuning_sst2_english
 #SBATCH --account=PAS2836
 #SBATCH --output=/fs/ess/PAS2836/ipa_gpt/jobs/logs/%x-%j.out
 #SBATCH --error=/fs/ess/PAS2836/ipa_gpt/jobs/logs/errors/%x-%j.err
@@ -36,20 +36,23 @@ scratch_datasets_prefix="$scratch_prefix/tokens"
 scratch_github_prefix="$scratch_prefix/github"
 mkdir -p $scratch_datasets_prefix $scratch_github_prefix $checkpoints_prefix
 
-repo_name="IPA_Finetuning"
-repo_address="git@github.com:benwalls04/$repo_name.git"
-repo_branch="Common_Changes"
-repo_dir="$scratch_github_prefix/$repo_name"
+# repo_name="IPA_Finetuning"
+# repo_address="git@github.com:aaron-jencks/$repo_name.git"
+# repo_branch="main"
+# repo_dir="$scratch_github_prefix/$repo_name"
 
-if [ ! -d "$repo_dir" ]; then
-  cd "$scratch_github_prefix"
-  git clone "$repo_address"
-  cd "$repo_name"
-  git checkout "$repo_branch"
-else
-  cd "$repo_dir"
-  git pull
-fi
+# if [ ! -d "$repo_dir" ]; then
+#   cd "$scratch_github_prefix"
+#   git clone "$repo_address"
+#   cd "$repo_name"
+#   git checkout "$repo_branch"
+# else
+#   cd "$repo_dir"
+#   git fetch origin
+#   git checkout "$repo_branch"
+#   git reset --hard origin/"$repo_branch"
+#   git pull origin "$repo_branch"
+# fi
 
 # Parse command line arguments for dataset
 if [ "$#" -ne 1 ]; then
@@ -63,7 +66,7 @@ echo "Dataset: $dataset_name"
 
 # Script specific names
 model="openwebtext_normal_multi_node_12_5"
-wandb_project="ipa_grid_search_${dataset_name}_english"
+wandb_project="ipa_finetuning_sst2_english"
 parent_dataset="nyu-mll/glue"
 
 checkpoint_path="$checkpoints_prefix/$model/ckpt.pt"
@@ -75,6 +78,8 @@ batch_sizes=(16 32 64)
 learning_rates=(1e-5 2e-5 3e-5 5e-5)
 weight_decays=(0.0 0.01 0.1)
 
+temp_finetune_script="/users/PAS2836/benwalls2004/ipa_finetuning/finetune.py"
+
 # Loop through all combinations
 for batch_size in "${batch_sizes[@]}"; do
   for lr in "${learning_rates[@]}"; do
@@ -82,7 +87,7 @@ for batch_size in "${batch_sizes[@]}"; do
       echo "Running with batch_size=${batch_size}, learning_rate=${lr}, weight_decay=${wd}"
       
       # Run Python and capture ALL output (both stdout and stderr)
-      output=$(python finetune.py \
+      output=$(python $temp_finetune_script \
         --dataset "$dataset_name" \
         --parent_dataset "$parent_dataset" \
         --pretrained_ckpt_path "$checkpoint_path" \
@@ -92,9 +97,8 @@ for batch_size in "${batch_sizes[@]}"; do
         --hf_cache "$datasets_prefix" \
         --wandb_project "$wandb_project" \
         --wandb_log \
-        --dont_save_ckpt \
         --num_epochs 2 \
-        --hyperparameters batch_size=$batch_size learning_rate=$lr weight_decay=$wd)
+        --hyperparameters batch_size=$batch_size learning_rate=$lr weight_decay=$wd 2>&1)
       
       # Save the exit code immediately
       exit_code=$?
