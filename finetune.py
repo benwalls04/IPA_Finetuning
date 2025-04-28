@@ -4,6 +4,8 @@ import pathlib
 import time
 
 from contextlib import nullcontext
+from typing import Dict
+
 from datasets import load_dataset, load_from_disk
 import inspect
 import numpy as np
@@ -293,7 +295,7 @@ def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best
 
 def main():
     # maps datasets to finetuning models
-    datasets = {
+    datasets: Dict[str, Task] = {
         "sst2": ClassificationSST2,
         "cola": ClassificationCOLA
     }
@@ -331,6 +333,19 @@ def main():
     parser.add_argument('--n_embd', type=int, default=768)
     parser.add_argument('--block_size', type=int, default=1024)
 
+    def parse_key_value(s):
+        if '=' not in s:
+            raise argparse.ArgumentTypeError(
+                f"Invalid hyperparameter '{s}'. Expected format: key=value"
+            )
+        key, value = s.split('=', 1)  # Split only on the first '='
+        return key, value
+
+    parser.add_argument(
+        '--hyperparameters', type=parse_key_value,
+        nargs='*', help='allows overriding of hyperparameters, must take the form of "parameter=value"'
+    )
+
     # Device settings
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'float32'])
@@ -362,6 +377,9 @@ def main():
     model = model_class(args.device, vocab_file, merges_file, args.data_dir,
                        num_embed=args.n_embd, dropout=args.dropout,
                        context_size=args.block_size, ipa=args.use_ipa)
+    model.hyperparameters.override_settings(**{
+        k: v for k, v in args.hyperparameters
+    })
 
 
     # Configurations
