@@ -66,9 +66,13 @@ def configure_optimizers(device_type, model: Task):
     
     # Create optimizer groups with different learning rates
     optim_groups = [
-        {'params': pretrained_decay_params, 'weight_decay': model.weight_decay, 'lr': model.learning_rate * 0.1},  # Lower LR for pretrained
-        {'params': pretrained_nodecay_params, 'weight_decay': 0.0, 'lr': model.learning_rate * 0.1},  # Lower LR for pretrained
-        {'params': classifier_decay_params, 'weight_decay': model.weight_decay},  # Default LR for classifier
+        {
+            'params': pretrained_decay_params,
+            'weight_decay': model.hyperparameters.weight_decay,
+            'lr': model.hyperparameters.learning_rate * 0.1
+        },  # Lower LR for pretrained
+        {'params': pretrained_nodecay_params, 'weight_decay': 0.0, 'lr': model.hyperparameters.learning_rate * 0.1},  # Lower LR for pretrained
+        {'params': classifier_decay_params, 'weight_decay': model.hyperparameters.weight_decay},  # Default LR for classifier
         {'params': classifier_nodecay_params, 'weight_decay': 0.0}  # Default LR for classifier
     ]
     
@@ -81,7 +85,12 @@ def configure_optimizers(device_type, model: Task):
     fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
     use_fused = fused_available and device_type == 'cuda'
     extra_args = dict(fused=True) if use_fused else dict()
-    optimizer = torch.optim.AdamW(optim_groups, lr=model.learning_rate, betas=(model.beta1, model.beta2), **extra_args)
+    optimizer = torch.optim.AdamW(
+        optim_groups,
+        lr=model.hyperparameters.learning_rate,
+        betas=(model.hyperparameters.beta1, model.hyperparameters.beta2),
+        **extra_args
+    )
     print(f"using fused AdamW: {use_fused}")
     
     return optimizer
@@ -163,38 +172,38 @@ def load_pretrained_model(args, model: Task, bias=False):
 # ===== Training Functions =====
 def get_lr(model: Task, it):
     # 1) linear warmup for warmup_iters steps
-    if it < model.warmup_iters:
-        return model.learning_rate * (it + 1) / (model.warmup_iters + 1)
+    if it < model.hyperparameters.warmup_iters:
+        return model.hyperparameters.learning_rate * (it + 1) / (model.hyperparameters.warmup_iters + 1)
     # 2) if it > lr_decay_iters, return min learning rate
-    if it > model.lr_decay_iters:
-        return model.min_lr
+    if it > model.hyperparameters.lr_decay_iters:
+        return model.hyperparameters.min_lr
     # 3) in between, use linear decay down to min learning rate
-    decay_ratio = (it - model.warmup_iters) / (model.lr_decay_iters - model.warmup_iters)
+    decay_ratio = (it - model.hyperparameters.warmup_iters) / (model.hyperparameters.lr_decay_iters - model.hyperparameters.warmup_iters)
     assert 0 <= decay_ratio <= 1
     # Linear decay (instead of cosine)
-    return model.learning_rate - decay_ratio * (model.learning_rate - model.min_lr)
+    return model.hyperparameters.learning_rate - decay_ratio * (model.hyperparameters.learning_rate - model.hyperparameters.min_lr)
 
 def get_max_iters(model: Task, gradient_accumulation_steps, num_epochs):
     # calculate number of iterations required
-    tokens_per_iter = gradient_accumulation_steps * model.batch_size * model.context_window
+    tokens_per_iter = gradient_accumulation_steps * model.hyperparameters.batch_size * model.context_window
     token_count = model.get_token_count()
     max_iters = int(np.ceil(token_count / tokens_per_iter)) * num_epochs
-    model.warmup_iters = int(model.warmup_iter_ratio * max_iters)
-    model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
+    model.hyperparameters.warmup_iters = int(model.hyperparameters.warmup_iter_ratio * max_iters)
+    model.hyperparameters.lr_decay_iters = int(model.hyperparameters.lr_decay_iter_ratio * max_iters)
     return max_iters
 
 def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, model_args):
     if args.wandb_log:
         config = {
-            "learning_rate": model.learning_rate,
-            "weight_decay": model.weight_decay,
-            "beta1": model.beta1,
-            "beta2": model.beta2,
-            "grad_clip": model.grad_clip,
+            "learning_rate": model.hyperparameters.learning_rate,
+            "weight_decay": model.hyperparameters.weight_decay,
+            "beta1": model.hyperparameters.beta1,
+            "beta2": model.hyperparameters.beta2,
+            "grad_clip": model.hyperparameters.grad_clip,
             "dropout": model.dropout,
-            "warmup_iter_ratio": model.warmup_iter_ratio,
-            "lr_decay_iter_ratio": model.lr_decay_iter_ratio,
-            "min_lr": model.min_lr,
+            "warmup_iter_ratio": model.hyperparameters.warmup_iter_ratio,
+            "lr_decay_iter_ratio": model.hyperparameters.lr_decay_iter_ratio,
+            "min_lr": model.hyperparameters.min_lr,
             "num_epochs": args.num_epochs,
             "gradient_accumulation_steps": args.gradient_accumulation_steps,
         }
@@ -211,7 +220,7 @@ def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best
 
     while True:
         # Get the learning rate based on our scheduler
-        lr = get_lr(model, iter_num) if not args.no_decay_lr else model.learning_rate
+        lr = get_lr(model, iter_num) if not args.no_decay_lr else model.hyperparameters.learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
@@ -231,9 +240,9 @@ def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best
             scaler.scale(loss).backward()
 
         # For preventing gradeints from exploding
-        if model.grad_clip != 0.0:
+        if model.hyperparameters.grad_clip != 0.0:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), model.grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), model.hyperparameters.grad_clip)
 
         # Step
         scaler.step(optimizer)
