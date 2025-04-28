@@ -201,7 +201,7 @@ class Task(nn.Module):
         data = self.load_data(split)
 
         num_examples = len(data) // (self.context_window + 1)
-        sample_indecies = torch.randint(num_examples, (self.batch_size,))
+        sample_indecies = torch.randint(num_examples, (self.hyperparameters.batch_size,))
 
         labels = []
         token_sequences = []
