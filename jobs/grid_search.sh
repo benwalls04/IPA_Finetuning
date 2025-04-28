@@ -91,6 +91,7 @@ for batch_size in "${batch_sizes[@]}"; do
       --hf_cache "$datasets_prefix" \
       --wandb_project "$wandb_project" \
       --wandb_log \
+      --dont_save_ckpt \
       --num_epochs 2 \
       --hyperparameters batch_size=$batch_size learning_rate=$lr weight_decay=$wd \
       
