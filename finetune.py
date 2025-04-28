@@ -155,7 +155,7 @@ def load_pretrained_model(args, model, bias=False):
     scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))
     optimizer = configure_optimizers(args.device, model)
 
-    return model, optimizer, scaler 
+    return model, optimizer, scaler, model_args
 
 # ===== Training Functions =====
 def get_lr(model, it):
@@ -180,7 +180,7 @@ def get_max_iters(model, gradient_accumulation_steps, num_epochs):
     model.lr_decay_iters = int(model.lr_decay_iter_ratio * max_iters)
     return max_iters    
 
-def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args):
+def finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, model_args):
     if args.wandb_log:
         config = {
             "learning_rate": model.learning_rate,
@@ -354,7 +354,7 @@ def main():
     # Configurations 
     prepare_datasets(args, model)
     ctx = configure_device(args)
-    model, optimizer, scaler = load_pretrained_model(args, model)
+    model, optimizer, scaler, margs = load_pretrained_model(args, model)
     max_iters = get_max_iters(model, args.gradient_accumulation_steps, args.num_epochs)
 
     
@@ -369,7 +369,7 @@ def main():
 
 
     # Finetune to the given downstream task 
-    finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args)
+    finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, margs)
 
 if __name__ == "__main__":
     main()
