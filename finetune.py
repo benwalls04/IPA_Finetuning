@@ -398,7 +398,6 @@ def main():
         best_val_loss = best_checkpoint.get('val_loss', float('inf'))
         print(f"Previous best validation loss: {best_val_loss:.4f}")
 
-
     # Finetune to the given downstream task
     finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, margs)
 
