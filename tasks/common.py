@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import GPT2TokenizerFast
 
+from tasks.hyperparameters import Hyperparameters
+
 
 class Task(nn.Module):
     def __init__(self, name: str, device: str,
@@ -15,7 +17,8 @@ class Task(nn.Module):
                  data_prefix: pathlib.Path,
                  embedding_size: int, dropout: float, n_classes: int,
                  context_window: int,
-                 input_feat: str, output_feat: str, ipa: bool = False):
+                 input_feat: str, output_feat: str, hyperparameters: Hyperparameters,
+                 ipa: bool = False):
         super().__init__()
         self.name = name
         self.pretrained_model = None
@@ -36,19 +39,7 @@ class Task(nn.Module):
             self.input_feat += '-phoneme'
             # self.output_feat += '-phoneme'  # label is a class
 
-        ## 1e-5, 2e-5, 3e-5
-        self.learning_rate = 3e-5
-        self.weight_decay = 0.01
-        self.beta1 = 0.9
-        self.beta2 = 0.999
-        self.grad_clip = .1
-        self.min_lr = .1 * self.learning_rate
-        # 16, 32
-        self.batch_size = 16
-        self.warmup_iter_ratio = .06
-        self.lr_decay_iter_ratio = .9
-        self.warmup_iters = None
-        self.lr_decay_iters = None
+        self.hyperparameters = hyperparameters
 
         self.tokenizer = GPT2TokenizerFast(
             vocab_file=str(self.tokenizer_vocab),
