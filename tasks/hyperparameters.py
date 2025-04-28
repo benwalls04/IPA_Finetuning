@@ -13,3 +13,8 @@ class Hyperparameters:
         self.lr_decay_iter_ratio = .9
         self.warmup_iters = None
         self.lr_decay_iters = None
+
+    def override_settings(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, type(getattr(self, key))(value))
