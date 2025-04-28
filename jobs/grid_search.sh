@@ -73,7 +73,8 @@ for batch_size in "${batch_sizes[@]}"; do
     for wd in "${weight_decays[@]}"; do
       echo "Running with batch_size=${batch_size}, learning_rate=${lr}, weight_decay=${wd}"
       
-      python finetune.py \
+      # Run Python and capture ALL output (both stdout and stderr)
+      output=$(python finetune.py \
         --dataset "$dataset_name" \
         --parent_dataset "$parent_dataset" \
         --pretrained_ckpt_path "$checkpoint_path" \
@@ -85,12 +86,19 @@ for batch_size in "${batch_sizes[@]}"; do
         --wandb_log \
         --dont_save_ckpt \
         --num_epochs 2 \
-        --hyperparameters "batch_size=$batch_size" "learning_rate=$lr" "weight_decay=$wd"
+        --hyperparameters "batch_size=$batch_size" "learning_rate=$lr" "weight_decay=$wd" 2>&1)
       
-      if [ $? -ne 0 ]; then
-        echo "ERROR: Run failed with batch_size=$batch_size, learning_rate=$lr, weight_decay=${wd}"
+      # Save the exit code immediately
+      exit_code=$?
+      
+      # Print the output
+      echo "$output"
+      
+      # Check the exit code
+      if [ $exit_code -ne 0 ]; then
+        echo "ERROR: Run failed with batch_size=$batch_size, learning_rate=$lr, weight_decay=$wd"
       else
-        echo "===== [$(date)] Completed run with batch_size=$batch_size, learning_rate=$lr, weight_decay=${wd} ====="
+        echo "===== [$(date)] Completed run with batch_size=$batch_size, learning_rate=$lr, weight_decay=$wd ====="
       fi
     done
   done
