@@ -13,9 +13,17 @@ echo "===== [$(date)] JOB STARTED ====="
 
 # Load required modules
 module load miniconda3/24.1.2-py310 cuda/12.4.1
-conda init bash
-conda activate base
 
+# Properly activate conda and the environment
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate ipa_env  # Use your specific environment name
+pip install datasets 
+pip install transformers
+pip install torch
+pip install wandb
+pip install scikit-learn
+
+# Verify environment
 echo "Python: $(which python) ($(python --version))"
 
 # setup paths
@@ -86,7 +94,7 @@ for batch_size in "${batch_sizes[@]}"; do
         --wandb_log \
         --dont_save_ckpt \
         --num_epochs 2 \
-        --hyperparameters "batch_size=$batch_size" "learning_rate=$lr" "weight_decay=$wd" 2>&1)
+        --hyperparameters batch_size=$batch_size learning_rate=$lr weight_decay=$wd)
       
       # Save the exit code immediately
       exit_code=$?
