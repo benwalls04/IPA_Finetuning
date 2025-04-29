@@ -74,44 +74,47 @@ token_data_dir="$scratch_datasets_prefix/$wandb_project"
 mkdir -p "$token_data_dir"
 
 # Define hyperparameter grids
-batch_sizes=(16 32 64)
-learning_rates=(1e-5 2e-5 3e-5 5e-5)
-weight_decays=(0.0 0.01 0.1)
+batch_sizes=(16)
+learning_rates=(3e-5 5e-5 1e-4)
+grad_clips=(0.1 0.25 0.5)
+warmup_iter_ratios=(0.03 0.06 0.1)
 
 temp_finetune_script="/users/PAS2836/benwalls2004/ipa_finetuning/finetune.py"
 
 # Loop through all combinations
 for batch_size in "${batch_sizes[@]}"; do
   for lr in "${learning_rates[@]}"; do
-    for wd in "${weight_decays[@]}"; do
-      echo "Running with batch_size=${batch_size}, learning_rate=${lr}, weight_decay=${wd}"
-      
-      # Run Python and capture ALL output (both stdout and stderr)
-      output=$(python $temp_finetune_script \
-        --dataset "$dataset_name" \
-        --parent_dataset "$parent_dataset" \
-        --pretrained_ckpt_path "$checkpoint_path" \
-        --out_dir "$checkpoints_prefix" \
-        --tokenizer_dir "$tokenizers_prefix" \
-        --data_dir "$token_data_dir" \
-        --hf_cache "$datasets_prefix" \
-        --wandb_project "$wandb_project" \
-        --wandb_log \
-        --num_epochs 2 \
-        --hyperparameters batch_size=$batch_size learning_rate=$lr weight_decay=$wd 2>&1)
-      
-      # Save the exit code immediately
-      exit_code=$?
-      
-      # Print the output
-      echo "$output"
-      
-      # Check the exit code
-      if [ $exit_code -ne 0 ]; then
-        echo "ERROR: Run failed with batch_size=$batch_size, learning_rate=$lr, weight_decay=$wd"
-      else
-        echo "===== [$(date)] Completed run with batch_size=$batch_size, learning_rate=$lr, weight_decay=$wd ====="
-      fi
+    for grad_clip in "${grad_clips[@]}"; do
+      for warmup_iter_ratio in "${warmup_iter_ratios[@]}"; do
+        echo "Running with batch_size=${batch_size}, learning_rate=${lr}, grad_clip=${grad_clip}, warmup_iter_ratio=${warmup_iter_ratio}"
+        
+        # Run Python and capture ALL output (both stdout and stderr)
+        output=$(python $temp_finetune_script \
+          --dataset "$dataset_name" \
+          --parent_dataset "$parent_dataset" \
+          --pretrained_ckpt_path "$checkpoint_path" \
+          --out_dir "$checkpoints_prefix" \
+          --tokenizer_dir "$tokenizers_prefix" \
+          --data_dir "$token_data_dir" \
+          --hf_cache "$datasets_prefix" \
+          --wandb_project "$wandb_project" \
+          --wandb_log \
+          --num_epochs 2 \
+          --hyperparameters batch_size=$batch_size learning_rate=$lr grad_clip=$grad_clip warmup_iter_ratio=$warmup_iter_ratio 2>&1)
+        
+        # Save the exit code immediately
+        exit_code=$?
+        
+        # Print the output
+        echo "$output"
+        
+        # Check the exit code
+        if [ $exit_code -ne 0 ]; then
+          echo "ERROR: Run failed with batch_size=$batch_size, learning_rate=$lr, grad_clip=$grad_clip, warmup_iter_ratio=$warmup_iter_ratio"
+        else
+          echo "===== [$(date)] Completed run with batch_size=$batch_size, learning_rate=$lr, grad_clip=$grad_clip, warmup_iter_ratio=${warmup_iter_ratio} ====="
+        fi
+      done
     done
   done
 done

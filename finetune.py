@@ -2,7 +2,7 @@ import argparse
 import os
 import pathlib
 import time
-
+import sys
 from contextlib import nullcontext
 from typing import Dict
 
@@ -257,7 +257,7 @@ def finetune(model: Task, max_iters, scaler, optimizer, ctx, best_val_loss, best
             print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val f2 {losses['val_f2']:.4f}, val accuracy {losses['val_accuracy']:.4f}")
 
              # Check if this is the best validation loss so far
-            if losses['val'] < best_val_loss:
+            if not args.dont_save_ckpt and losses['val'] < best_val_loss:
                 best_val_loss = losses['val']
                 print(f"New best validation loss: {best_val_loss:.4f}, saving checkpoint to {best_checkpoint_path}")
 
@@ -358,7 +358,7 @@ def main():
     parser.add_argument('--eval_interval', type=int, default=5)
     parser.add_argument('--wandb_log', action='store_true')
     parser.add_argument('--eval_only', action='store_true')
-    parser.add_argument('--always_save_ckpt', action='store_true')
+    parser.add_argument('--dont_save_ckpt', action='store_true')
 
     args = parser.parse_args()
 
@@ -392,7 +392,7 @@ def main():
     # Check if a previous best checkpoint exists
     best_val_loss = float('inf')
     best_checkpoint_path = pathlib.Path(args.out_dir) / f"{args.dataset}-ckpt.pt"
-    if best_checkpoint_path.exists():
+    if not args.dont_save_ckpt and best_checkpoint_path.exists():
         print(f"Loading previous best checkpoint from {best_checkpoint_path}")
         best_checkpoint = torch.load(best_checkpoint_path, map_location=args.device)
         best_val_loss = best_checkpoint.get('val_loss', float('inf'))
@@ -402,4 +402,10 @@ def main():
     finetune(model, max_iters, scaler, optimizer, ctx, best_val_loss, best_checkpoint_path, args, margs)
 
 if __name__ == "__main__":
-    main()
+   try:
+       main()
+   except Exception as e:
+       print(f"ERROR: {e}")
+       import traceback
+       traceback.print_exc()
+       sys.exit(1)  # Exit with error code

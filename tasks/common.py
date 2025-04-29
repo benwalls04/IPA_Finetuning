@@ -38,7 +38,7 @@ class Task(nn.Module):
         if self.ipa:
             self.input_feat += '-phoneme'
             # self.output_feat += '-phoneme'  # label is a class
-
+        
         self.hyperparameters = hyperparameters
 
         self.tokenizer = GPT2TokenizerFast(
