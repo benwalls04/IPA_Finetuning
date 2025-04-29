@@ -79,23 +79,53 @@ class Task(nn.Module):
         return np.memmap(self.data_prefix / self.name / f'{split}.bin', dtype=np.uint16, mode='r')
 
     def preprocess(self, examples):
-        if isinstance(self.input_feat, list): 
+        if isinstance(self.input_feat, list):
             text_inputs = [examples[feat] for feat in self.input_feat]
             result = self.tokenizer(
-                text_inputs,
+                *text_inputs, 
                 padding="max_length",
                 truncation=True,
                 max_length=1024
             )
         else:
-        result = self.tokenizer(
-            examples[self.input_feat],
-            padding="max_length",
-            truncation=True,
-            max_length=1024
-        )
+            result = self.tokenizer(
+                examples[self.input_feat],
+                padding="max_length",
+                truncation=True,
+                max_length=1024
+            )
         result["labels"] = examples[self.output_feat]
-        print(result[0])
+        
+        # Add detailed debugging information for the first example
+        print("\n===== TOKENIZATION DEBUG INFO =====")
+        print(f"Dataset: {self.name}")
+        
+        # Print input features
+        if isinstance(self.input_feat, list):
+            for i, feat in enumerate(self.input_feat):
+                print(f"Input feature {i} ({feat}): {examples[feat][0]}")
+        else:
+            print(f"Input feature ({self.input_feat}): {examples[self.input_feat][0]}")
+        
+        # Print output feature
+        print(f"Output feature ({self.output_feat}): {examples[self.output_feat][0]}")
+        
+        # Print tokenization results
+        print(f"Token IDs: {result['input_ids'][0][:50]}... (truncated)")
+        
+        # Decode back to text to verify tokenization
+        decoded = self.tokenizer.decode(result['input_ids'][0])
+        print(f"Decoded tokens: {decoded[:100]}... (truncated)")
+        
+        # Print attention mask
+        print(f"Attention mask: {result['attention_mask'][0][:50]}... (truncated)")
+        
+        # Print token counts
+        non_padding = sum(result['attention_mask'][0])
+        print(f"Non-padding tokens: {non_padding} out of {len(result['input_ids'][0])}")
+        
+        print("===================================\n")
+        
         return result
 
     def prepare_data(self, train_dataset, val_dataset):

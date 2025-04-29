@@ -15,6 +15,7 @@ import wandb
 from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
 from tasks.cola import ClassificationCOLA
+from tasks.mnli import ClassificationMNLI
 from tasks.common import Task
 
 
@@ -297,7 +298,8 @@ def main():
     # maps datasets to finetuning models
     datasets: Dict[str, Task] = {
         "sst2": ClassificationSST2,
-        "cola": ClassificationCOLA
+        "cola": ClassificationCOLA,
+        "mnli": ClassificationMNLI
     }
 
     parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
@@ -377,9 +379,11 @@ def main():
     model = model_class(args.device, vocab_file, merges_file, args.data_dir,
                        num_embed=args.n_embd, dropout=args.dropout,
                        context_size=args.block_size, ipa=args.use_ipa)
-    model.hyperparameters.override_settings(**{
-        k: v for k, v in args.hyperparameters
-    })
+    
+    if args.hyperparameters: 
+        model.hyperparameters.override_settings(**{
+            k: v for k, v in args.hyperparameters
+        })
 
 
     # Configurations
