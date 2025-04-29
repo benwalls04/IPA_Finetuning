@@ -15,7 +15,7 @@ import wandb
 from tasks.classification_sst2 import ClassificationSST2
 from model import GPTConfig, GPT
 from tasks.cola import ClassificationCOLA
-from tasks.mnli import ClassificationMNLI
+from tasks.rte import ClassificationRTE
 from tasks.common import Task
 
 
@@ -109,6 +109,9 @@ def prepare_datasets(args, model):
     else:
         if args.from_disk:
             raise Exception('can\'t load from disk with subset.')
+        print(args.parent_dataset)
+        print(args.dataset)
+        print(args.hf_cache)
         dataset = load_dataset(args.parent_dataset, args.dataset, cache_dir=str(args.hf_cache))
 
     # Split train and validation examples
@@ -299,7 +302,7 @@ def main():
     datasets: Dict[str, Task] = {
         "sst2": ClassificationSST2,
         "cola": ClassificationCOLA,
-        "mnli": ClassificationMNLI
+        "rte": ClassificationRTE
     }
 
     parser = argparse.ArgumentParser(description="Finetune a model on a classification task")
