@@ -79,6 +79,15 @@ class Task(nn.Module):
         return np.memmap(self.data_prefix / self.name / f'{split}.bin', dtype=np.uint16, mode='r')
 
     def preprocess(self, examples):
+        if isinstance(self.input_feat, list): 
+            text_inputs = [examples[feat] for feat in self.input_feat]
+            result = self.tokenizer(
+                text_inputs,
+                padding="max_length",
+                truncation=True,
+                max_length=1024
+            )
+        else:
         result = self.tokenizer(
             examples[self.input_feat],
             padding="max_length",
@@ -86,6 +95,7 @@ class Task(nn.Module):
             max_length=1024
         )
         result["labels"] = examples[self.output_feat]
+        print(result[0])
         return result
 
     def prepare_data(self, train_dataset, val_dataset):
